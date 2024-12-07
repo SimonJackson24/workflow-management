@@ -1,125 +1,189 @@
 // core/sdk/docs/formatters/PDFFormatter.ts
 
-import PDFKit from 'pdfkit';
-import { PluginDoc } from '../../types';
+private writeAPIDocs(pdf: PDFKit.PDFDocument, api: any): void {
+  pdf.addPage();
+  pdf.fontSize(16).text('API Documentation');
+  pdf.moveDown();
 
-export class PDFFormatter {
-  async generatePDF(docs: PluginDoc): Promise<Buffer> {
-    const pdf = new PDFKit();
-    const chunks: Buffer[] = [];
+  // Endpoints
+  pdf.fontSize(14).text('Endpoints');
+  for (const endpoint of api.endpoints) {
+    pdf.fontSize(12).text(`${endpoint.method} ${endpoint.path}`);
+    pdf.fontSize(10)
+      .text(`Description: ${endpoint.description}`)
+      .text(`Parameters:`)
+      .moveDown(0.5);
 
-    return new Promise((resolve, reject) => {
-      pdf.on('data', chunk => chunks.push(chunk));
-      pdf.on('end', () => resolve(Buffer.concat(chunks)));
-      pdf.on('error', reject);
+    // Parameters table
+    this.createTable(pdf, [
+      ['Name', 'Type', 'Required', 'Description'],
+      ...endpoint.parameters.map((param: any) => [
+        param.name,
+        param.type,
+        param.required ? 'Yes' : 'No',
+        param.description
+      ])
+    ]);
 
-      this.writePDF(pdf, docs);
-      pdf.end();
-    });
+    pdf.moveDown()
+      .text(`Returns: ${endpoint.returnType.type}`)
+      .text(`${endpoint.returnType.description}`)
+      .moveDown(2);
   }
 
-  private writePDF(pdf: PDFKit.PDFDocument, docs: PluginDoc): void {
-    // Title
-    pdf.fontSize(24).text(docs.name);
-    pdf.fontSize(12).text(`Version: ${docs.version}`);
-    pdf.moveDown();
+  // Methods
+  pdf.fontSize(14).text('Methods');
+  for (const method of api.methods) {
+    pdf.fontSize(12).text(method.name);
+    pdf.fontSize(10)
+      .text(`${method.accessibility || 'public'} ${method.isAsync ? 'async ' : ''}`)
+      .text(`Description: ${method.description}`)
+      .moveDown(0.5);
 
-    // Description
-    pdf.fontSize(14).text('Description');
-    pdf.fontSize(12).text(docs.description);
-    pdf.moveDown();
+    if (method.parameters.length > 0) {
+      this.createTable(pdf, [
+        ['Parameter', 'Type', 'Optional', 'Description'],
+        ...method.parameters.map((param: any) => [
+          param.name,
+          param.type,
+          param.optional ? 'Yes' : 'No',
+          param.description
+        ])
+      ]);
+    }
 
-    // API Documentation
-    this.writeAPIDocs(pdf, docs.api);
-    
-    // Events Documentation
-    this.writeEventsDocs(pdf, docs.events);
-    
-    // Configuration Documentation
-    this.writeConfigDocs(pdf, docs.configuration);
-    
-    // Examples
-    this.writeExamples(pdf, docs.examples);
-  }
-
-  private writeAPIDocs(pdf: PDFKit.PDFDocument, api: any): void {
-    // Implementation
-  }
-
-  private writeEventsDocs(pdf: PDFKit.PDFDocument, events: any): void {
-    // Implementation
-  }
-
-  private writeConfigDocs(pdf: PDFKit.PDFDocument, config: any): void {
-    // Implementation
-  }
-
-  private writeExamples(pdf: PDFKit.PDFDocument, examples: any): void {
-    // Implementation
+    pdf.moveDown()
+      .text(`Returns: ${method.returnType.type}`)
+      .moveDown(2);
   }
 }
 
-// core/sdk/docs/formatters/OpenAPIFormatter.ts
+private writeEventsDocs(pdf: PDFKit.PDFDocument, events: any): void {
+  pdf.addPage();
+  pdf.fontSize(16).text('Events Documentation');
+  pdf.moveDown();
 
-import { OpenAPIV3 } from 'openapi-types';
-import { PluginDoc } from '../../types';
+  // Emitted Events
+  pdf.fontSize(14).text('Emitted Events');
+  for (const event of events.emitted) {
+    pdf.fontSize(12).text(event.name);
+    pdf.fontSize(10)
+      .text(`Description: ${event.description}`)
+      .text('Payload:')
+      .moveDown(0.5);
 
-export class OpenAPIFormatter {
-  generateOpenAPI(docs: PluginDoc): OpenAPIV3.Document {
-    return {
-      openapi: '3.0.0',
-      info: {
-        title: docs.name,
-        version: docs.version,
-        description: docs.description
-      },
-      paths: this.generatePaths(docs.api),
-      components: {
-        schemas: this.generateSchemas(docs),
-        securitySchemes: this.generateSecuritySchemes()
-      }
-    };
-  }
-
-  private generatePaths(api: any): OpenAPIV3.PathsObject {
-    const paths: OpenAPIV3.PathsObject = {};
-    
-    for (const endpoint of api.endpoints) {
-      paths[endpoint.path] = {
-        [endpoint.method.toLowerCase()]: {
-          summary: endpoint.description,
-          parameters: this.convertParameters(endpoint.parameters),
-          responses: this.generateResponses(endpoint),
-          security: this.generateSecurity(endpoint)
-        }
-      };
+    if (event.payload) {
+      this.createTable(pdf, [
+        ['Field', 'Type', 'Description'],
+        ...Object.entries(event.payload).map(([field, info]: [string, any]) => [
+          field,
+          info.type,
+          info.description
+        ])
+      ]);
     }
-
-    return paths;
+    pdf.moveDown(2);
   }
 
-  private generateSchemas(docs: PluginDoc): OpenAPIV3.ComponentsObject['schemas'] {
-    // Implementation
-    return {};
+  // Handled Events
+  pdf.fontSize(14).text('Handled Events');
+  for (const event of events.handled) {
+    pdf.fontSize(12).text(event.name);
+    pdf.fontSize(10)
+      .text(`Description: ${event.description}`)
+      .text(`Handler: ${event.handler}`)
+      .moveDown(2);
   }
+}
 
-  private generateSecuritySchemes(): OpenAPIV3.ComponentsObject['securitySchemes'] {
-    // Implementation
-    return {};
-  }
+private writeConfigDocs(pdf: PDFKit.PDFDocument, config: any): void {
+  pdf.addPage();
+  pdf.fontSize(16).text('Configuration Documentation');
+  pdf.moveDown();
 
-  private convertParameters(parameters: any[]): OpenAPIV3.ParameterObject[] {
-    // Implementation
-    return [];
-  }
+  // Schema
+  pdf.fontSize(14).text('Configuration Schema');
+  this.createTable(pdf, [
+    ['Option', 'Type', 'Required', 'Default', 'Description'],
+    ...Object.entries(config.schema).map(([key, value]: [string, any]) => [
+      key,
+      value.type,
+      value.required ? 'Yes' : 'No',
+      value.default,
+      value.description
+    ])
+  ]);
+  pdf.moveDown(2);
 
-  private generateResponses(endpoint: any): OpenAPIV3.ResponsesObject {
-    // Implementation
-    return {};
+  // Validation Rules
+  pdf.fontSize(14).text('Validation Rules');
+  for (const rule of config.validation) {
+    pdf.fontSize(10)
+      .text(`• ${rule.description}`)
+      .moveDown(0.5);
   }
+}
 
-  private generateSecurity(endpoint: any): OpenAPIV3.SecurityRequirementObject[] {
-    // Implementation
-    return [];
+private writeExamples(pdf: PDFKit.PDFDocument, examples: any): void {
+  pdf.addPage();
+  pdf.fontSize(16).text('Examples');
+  pdf.moveDown();
+
+  for (const example of examples) {
+    pdf.fontSize(14).text(example.name);
+    pdf.fontSize(10).text(example.description);
+    pdf.moveDown();
+    
+    // Code block
+    pdf.font('Courier')
+      .fontSize(9)
+      .text(example.code, {
+        width: 500,
+        align: 'left',
+        lineGap: 2
+      });
+    
+    pdf.font('Helvetica')
+      .moveDown(2);
   }
+}
+
+private createTable(pdf: PDFKit.PDFDocument, data: string[][]): void {
+  const colWidths = this.calculateColumnWidths(data);
+  const rowHeight = 20;
+  let y = pdf.y;
+
+  // Headers
+  const headers = data[0];
+  headers.forEach((header, i) => {
+    pdf.text(header, pdf.x + this.sumArray(colWidths, 0, i), y, {
+      width: colWidths[i],
+      align: 'left'
+    });
+  });
+
+  y += rowHeight;
+
+  // Data
+  data.slice(1).forEach(row => {
+    row.forEach((cell, i) => {
+      pdf.text(cell, pdf.x + this.sumArray(colWidths, 0, i), y, {
+        width: colWidths[i],
+        align: 'left'
+      });
+    });
+    y += rowHeight;
+  });
+
+  pdf.y = y;
+}
+
+private calculateColumnWidths(data: string[][]): number[] {
+  const columns = data[0].length;
+  const totalWidth = 500; // Adjust based on page width
+  return new Array(columns).fill(totalWidth / columns);
+}
+
+private sumArray(arr: number[], start: number, end: number): number {
+  return arr.slice(start, end).reduce((sum, num) => sum + num, 0);
 }
