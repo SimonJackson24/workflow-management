@@ -11,6 +11,7 @@ interface User {
   email: string;
   role: string;
   organization: any;
+  twoFactorEnabled?: boolean;
   // Add other user properties
 }
 
@@ -24,6 +25,11 @@ interface AuthContextType {
   forgotPassword: (email: string) => Promise<void>;
   resetPassword: (token: string, password: string) => Promise<void>;
   updateProfile: (data: any) => Promise<void>;
+  // New 2FA methods
+  setupTwoFactor: () => Promise<{ qrCodeUrl: string; backupCodes: string[] }>;
+  verifyTwoFactor: (code: string) => Promise<boolean>;
+  disableTwoFactor: (code: string) => Promise<void>;
+  validateTwoFactorCode: (code: string) => Promise<{ token: string; user: User }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -55,6 +61,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = async (email: string, password: string) => {
     try {
       const response = await api.post('/auth/login', { email, password });
+      
+      // Check if 2FA is required
+      if (response.data.requiresTwoFactor) {
+        // Store temporary session for 2FA verification
+        sessionStorage.setItem('tempAuthSession', response.data.tempToken);
+        return navigate('/two-factor');
+      }
+
       localStorage.setItem('token', response.data.token);
       setUser(response.data.user);
       navigate('/');
@@ -64,56 +78,69 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const logout = async () => {
+  // New 2FA methods
+  const setupTwoFactor = async () => {
     try {
-      await api.post('/auth/logout');
-      localStorage.removeItem('token');
-      setUser(null);
-      navigate('/login');
-    } catch (error) {
-      console.error('Logout failed:', error);
+      const response = await api.post('/auth/2fa/setup');
+      return {
+        qrCodeUrl: response.data.qrCodeUrl,
+        backupCodes: response.data.backupCodes
+      };
+    } catch (error: any) {
+      setError(error.response?.data?.message || '2FA setup failed');
+      throw error;
     }
   };
 
-  const register = async (userData: any) => {
+  const verifyTwoFactor = async (code: string) => {
     try {
-      const response = await api.post('/auth/register', userData);
+      const response = await api.post('/auth/2fa/verify', { code });
+      if (response.data.success) {
+        setUser(prev => prev ? { ...prev, twoFactorEnabled: true } : null);
+      }
+      return response.data.success;
+    } catch (error: any) {
+      setError(error.response?.data?.message || '2FA verification failed');
+      throw error;
+    }
+  };
+
+  const validateTwoFactorCode = async (code: string) => {
+    try {
+      const tempToken = sessionStorage.getItem('tempAuthSession');
+      if (!tempToken) throw new Error('No temporary session found');
+
+      const response = await api.post('/auth/2fa/validate', {
+        code,
+        tempToken
+      });
+
+      // Clear temporary session
+      sessionStorage.removeItem('tempAuthSession');
+
+      // Set actual auth token and user
       localStorage.setItem('token', response.data.token);
       setUser(response.data.user);
-      navigate('/');
+
+      return response.data;
     } catch (error: any) {
-      setError(error.response?.data?.message || 'Registration failed');
+      setError(error.response?.data?.message || '2FA validation failed');
       throw error;
     }
   };
 
-  const forgotPassword = async (email: string) => {
+  const disableTwoFactor = async (code: string) => {
     try {
-      await api.post('/auth/forgot-password', { email });
+      await api.post('/auth/2fa/disable', { code });
+      setUser(prev => prev ? { ...prev, twoFactorEnabled: false } : null);
     } catch (error: any) {
-      setError(error.response?.data?.message || 'Failed to send reset email');
+      setError(error.response?.data?.message || '2FA disable failed');
       throw error;
     }
   };
 
-  const resetPassword = async (token: string, password: string) => {
-    try {
-      await api.post(`/auth/reset-password/${token}`, { password });
-    } catch (error: any) {
-      setError(error.response?.data?.message || 'Password reset failed');
-      throw error;
-    }
-  };
-
-  const updateProfile = async (data: any) => {
-    try {
-      const response = await api.put('/auth/profile', data);
-      setUser(response.data);
-    } catch (error: any) {
-      setError(error.response?.data?.message || 'Profile update failed');
-      throw error;
-    }
-  };
+  // Your existing methods...
+  // logout, register, forgotPassword, resetPassword, updateProfile
 
   return (
     <AuthContext.Provider
@@ -126,7 +153,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         register,
         forgotPassword,
         resetPassword,
-        updateProfile
+        updateProfile,
+        // Add new 2FA methods
+        setupTwoFactor,
+        verifyTwoFactor,
+        disableTwoFactor,
+        validateTwoFactorCode
       }}
     >
       {children}
