@@ -10,6 +10,15 @@ import { PluginProvider } from './contexts/PluginContext';
 import PrivateRoute from './components/common/PrivateRoute';
 import Layout from './components/layout/Layout';
 import { monitoring } from './utils/monitoring/AdvancedMonitoring';
+import Analytics from './pages/Analytics';
+import Billing from './pages/Billing';
+import Reports from './pages/Reports';
+import ApiDocs from './pages/ApiDocs';
+import AuditLogs from './pages/AuditLogs';
+import TeamManagement from './pages/TeamManagement';
+import Integrations from './pages/Integrations';
+
+const MonitoredApp: React.FC = () => {
 
 // Pages
 import Dashboard from './pages/Dashboard';
@@ -69,14 +78,47 @@ const MonitoredApp: React.FC = () => {
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password/:token" element={<ResetPassword />} />
 
-      {/* Protected Routes */}
+
+      {/* Protected Routes with Layout */}
       <Route element={<PrivateRoute><Layout /></PrivateRoute>}>
+        {/* Existing Routes */}
         <Route path="/" element={<Dashboard />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/users" element={<Users />} />
         <Route path="/plugins" element={<Plugins />} />
         <Route path="/subscriptions" element={<Subscriptions />} />
+
+        {/* New Routes */}
+        <Route path="/analytics" element={<Analytics />} />
+        <Route path="/billing" element={<Billing />} />
+        <Route path="/reports" element={<Reports />} />
+        <Route path="/api-docs" element={<ApiDocs />} />
+        <Route path="/audit-logs" element={<AuditLogs />} />
+        <Route path="/team" element={<TeamManagement />} />
+        <Route path="/integrations" element={<Integrations />} />
+
+        {/* Nested Routes */}
+        <Route path="/settings/*" element={<Settings />}>
+          <Route path="profile" element={<ProfileSettings />} />
+          <Route path="security" element={<SecuritySettings />} />
+          <Route path="notifications" element={<NotificationSettings />} />
+          <Route path="billing" element={<BillingSettings />} />
+        </Route>
+
+        <Route path="/users/*" element={<Users />}>
+          <Route path=":userId" element={<UserDetails />} />
+          <Route path=":userId/edit" element={<UserEdit />} />
+          <Route path="roles" element={<RoleManagement />} />
+          <Route path="permissions" element={<PermissionManagement />} />
+        </Route>
+
+        <Route path="/plugins/*" element={<Plugins />}>
+          <Route path="marketplace" element={<PluginMarketplace />} />
+          <Route path=":pluginId" element={<PluginDetails />} />
+          <Route path=":pluginId/settings" element={<PluginSettings />} />
+          <Route path=":pluginId/analytics" element={<PluginAnalytics />} />
+        </Route>
       </Route>
 
       {/* 404 Route */}
