@@ -145,4 +145,78 @@ export const asyncError = (fn: Function) => (
  * Database Error Handler
  */
 export const handleDatabaseError = (error: any) => {
-  if (error instanceof mongoose.Error.ValidationError
+  if (error instanceof mongoose.Error.ValidationError) {
+    return ErrorHandler.handleMongooseValidationError(error);
+  }
+
+  if (error.code === 11000) {
+    return ErrorHandler.handleMongooseDuplicateKeyError(error);
+  }
+
+  return new ApiError(500, 'Database error', 'DATABASE_ERROR');
+};
+
+/**
+ * Validation Error Handler
+ */
+export const handleValidationError = (error: any) => {
+  if (Array.isArray(error)) {
+    const validationErrors = error.map(err => ({
+      field: err.param,
+      message: err.msg
+    }));
+
+    return new ApiError(400, 'Validation error', 'VALIDATION_ERROR', {
+      errors: validationErrors
+    });
+  }
+
+  return new ApiError(400, error.message, 'VALIDATION_ERROR');
+};
+
+/**
+ * Authentication Error Handler
+ */
+export const handleAuthError = (error: any) => {
+  if (error.name === 'JsonWebTokenError') {
+    return new ApiError(401, 'Invalid token', 'INVALID_TOKEN');
+  }
+
+  if (error.name === 'TokenExpiredError') {
+    return new ApiError(401, 'Token expired', 'TOKEN_EXPIRED');
+  }
+
+  return new ApiError(401, 'Authentication error', 'AUTH_ERROR');
+};
+
+/**
+ * Permission Error Handler
+ */
+export const handlePermissionError = (resource: string, action: string) => {
+  return new ApiError(
+    403,
+    `You don't have permission to ${action} this ${resource}`,
+    'PERMISSION_DENIED',
+    { resource, action }
+  );
+};
+
+/**
+ * Rate Limit Error Handler
+ */
+export const handleRateLimitError = (
+  limit: number,
+  windowMs: number,
+  retryAfter: number
+) => {
+  return new ApiError(
+    429,
+    'Too many requests',
+    'RATE_LIMIT_EXCEEDED',
+    {
+      limit,
+      windowMs,
+      retryAfter
+    }
+  );
+};
