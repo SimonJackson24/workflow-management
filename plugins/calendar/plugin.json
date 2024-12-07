@@ -1,0 +1,11 @@
+{
+  "id": "calendar",
+  "name": "Calendar Integration",
+  "version": "1.0.0",
+  "description": "Google Calendar integration for employee scheduling",
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "core": ">=1.0.0"
+  }
+}
