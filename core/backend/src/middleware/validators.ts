@@ -221,4 +221,19 @@ export const customValidationRules = {
 };
 
 /**
- * Validation Error
+ * Validation Error Messages
+ */
+export const ValidationMessages = {
+  required: (field: string) => `${field} is required`,
+  invalid: (field: string) => `Invalid ${field}`,
+  length: (field: string, min: number, max: number) => 
+    `${field} must be between ${min} and ${max} characters`,
+  min: (field: string, min: number) => `${field} must be at least ${min}`,
+  max: (field: string, max: number) => `${field} must be at most ${max}`,
+  unique: (field: string) => `${field} already exists`,
+  enum: (field: string, values: string[]) => 
+    `${field} must be one of: ${values.join(', ')}`,
+  date: (field: string) => `${field} must be a valid date`,
+  future: (field: string) => `${field} must be in the future`,
+  past: (field: string) => `${field} must be in the past`
+};
