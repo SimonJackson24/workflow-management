@@ -192,4 +192,84 @@ const UserSchema: Schema = new Schema({
   emailVerificationToken: String,
   emailVerified: {
     type: Boolean,
-    default:
+    default: false
+  }
+}, {
+  timestamps: true
+});
+
+// Indexes
+UserSchema.index({ email: 1 }, { unique: true });
+UserSchema.index({ organizationId: 1 });
+UserSchema.index({ 'security.lastLogin.date': 1 });
+UserSchema.index({ status: 1 });
+
+// Encrypt password using bcrypt
+UserSchema.pre('save', async function(next) {
+  if (!this.isModified('password')) {
+    next();
+  }
+
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
+
+  // Add to password history
+  if (this.security.passwordHistory.length >= 5) {
+    this.security.passwordHistory.shift();
+  }
+  this.security.passwordHistory.push(this.password);
+  this.security.lastPasswordChange = new Date();
+});
+
+// Sign JWT and return
+UserSchema.methods.getSignedJwtToken = function(): string {
+  return jwt.sign(
+    {
+      id: this._id,
+      organizationId: this.organizationId,
+      role: this.role
+    },
+    process.env.JWT_SECRET!,
+    {
+      expiresIn: process.env.JWT_EXPIRE
+    }
+  );
+};
+
+// Match user entered password to hashed password in database
+UserSchema.methods.matchPassword = async function(enteredPassword: string): Promise<boolean> {
+  return await bcrypt.compare(enteredPassword, this.password);
+};
+
+// Generate and hash password token
+UserSchema.methods.getResetPasswordToken = function(): string {
+  // Generate token
+  const resetToken = crypto.randomBytes(20).toString('hex');
+
+  // Hash token and set to resetPasswordToken field
+  this.resetPasswordToken = crypto
+    .createHash('sha256')
+    .update(resetToken)
+    .digest('hex');
+
+  // Set expire
+  this.resetPasswordExpire = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+  return resetToken;
+};
+
+// Generate email verification token
+UserSchema.methods.getEmailVerificationToken = function(): string {
+  // Generate token
+  const verificationToken = crypto.randomBytes(20).toString('hex');
+
+  // Hash token and set to emailVerificationToken field
+  this.emailVerificationToken = crypto
+    .createHash('sha256')
+    .update(verificationToken)
+    .digest('hex');
+
+  return verificationToken;
+};
+
+export default mongoose.model<IUser>('User', UserSchema);
