@@ -7,84 +7,93 @@ import { EventEmitter } from 'events';
 import {
   SandboxConfig,
   ResourceLimits,
-  SandboxStats,
-  PluginContext
-} from '../types/plugin.types';
-import { logger } from '../utils/logger';
+  NetworkRules,
+  FileSystemRules,
+  ProcessRules
+} from '../types/sandbox.types';
 
 export class PluginSandboxService {
-  private sandboxes: Map<string, NodeVM>;
-  private stats: Map<string, SandboxStats>;
-  private eventEmitter: EventEmitter;
+  private readonly sandboxes: Map<string, NodeVM>;
+  private readonly resourceMonitor: ResourceMonitor;
+  private readonly networkController: NetworkController;
+  private readonly fsController: FileSystemController;
+  private readonly processManager: ProcessManager;
+  private readonly eventEmitter: EventEmitter;
 
   constructor() {
     this.sandboxes = new Map();
-    this.stats = new Map();
+    this.resourceMonitor = new ResourceMonitor();
+    this.networkController = new NetworkController();
+    this.fsController = new FileSystemController();
+    this.processManager = new ProcessManager();
     this.eventEmitter = new EventEmitter();
   }
 
-  async createSandbox(pluginId: string, config: SandboxConfig): Promise<PluginContext> {
+  async createSandbox(pluginId: string, config: SandboxConfig): Promise<void> {
     try {
-      // Initialize sandbox statistics
-      this.stats.set(pluginId, {
-        memoryUsage: 0,
-        cpuUsage: 0,
-        activeConnections: 0,
-        errors: [],
-        lastActivity: Date.now()
-      });
+      // Create isolated directory
+      const sandboxDir = await this.createSandboxDirectory(pluginId);
 
-      // Create sandbox with resource limits
+      // Set up resource limits
+      await this.resourceMonitor.setupLimits(pluginId, config.resources);
+
+      // Configure network access
+      await this.networkController.setupRules(pluginId, config.network);
+
+      // Set up filesystem restrictions
+      await this.fsController.setupRules(pluginId, config.filesystem);
+
+      // Initialize process management
+      await this.processManager.initialize(pluginId, config.process);
+
+      // Create sandbox instance
       const sandbox = new NodeVM({
         console: 'redirect',
         sandbox: {},
         require: {
           external: false,
-          builtin: ['crypto', 'path', 'url'],
-          root: path.join(process.cwd(), 'plugins', pluginId),
+          builtin: this.getAllowedModules(config),
+          root: sandboxDir,
           mock: this.createMocks(pluginId)
         },
         wrapper: 'none',
         sourceExtensions: ['js', 'json'],
-        env: this.createEnvironment(pluginId, config),
+        env: this.createEnvironment(pluginId, config)
       });
 
-      // Set up resource monitoring
-      this.monitorResources(pluginId, sandbox);
-
-      // Set up console redirection
-      this.setupConsoleRedirection(pluginId, sandbox);
-
-      // Create plugin context
-      const context = await this.createPluginContext(pluginId, sandbox, config);
+      // Set up event handlers
+      this.setupEventHandlers(pluginId, sandbox);
 
       // Store sandbox instance
       this.sandboxes.set(pluginId, sandbox);
 
-      return context;
+      // Start monitoring
+      this.startMonitoring(pluginId);
+
     } catch (error) {
-      logger.error(`Failed to create sandbox for plugin ${pluginId}:`, error);
+      await this.cleanup(pluginId);
       throw error;
     }
   }
 
+  private async createSandboxDirectory(pluginId: string): Promise<string> {
+    const dir = path.join(process.cwd(), 'sandboxes', pluginId);
+    await fs.mkdir(dir, { recursive: true });
+    return dir;
+  }
+
+  private getAllowedModules(config: SandboxConfig): string[] {
+    // Return list of allowed modules based on config
+    return ['crypto', 'path', 'url'].filter(module => 
+      config.allowedModules.includes(module)
+    );
+  }
+
   private createMocks(pluginId: string): Record<string, any> {
     return {
-      // Mock sensitive modules
-      'fs': {
-        readFile: async (path: string) => {
-          // Implement secure file reading
-        },
-        writeFile: async (path: string, data: any) => {
-          // Implement secure file writing
-        }
-      },
-      'http': {
-        // Implement secure HTTP client
-      },
-      'database': {
-        // Implement secure database access
-      }
+      fs: this.fsController.createRestrictedFS(pluginId),
+      net: this.networkController.createRestrictedNetwork(pluginId),
+      child_process: this.processManager.createRestrictedProcess(pluginId)
     };
   }
 
@@ -92,145 +101,120 @@ export class PluginSandboxService {
     return {
       PLUGIN_ID: pluginId,
       NODE_ENV: process.env.NODE_ENV,
-      ...config.env,
-      // Restrict access to sensitive environment variables
+      ...this.filterEnvironmentVariables(config.env)
     };
   }
 
-  private monitorResources(pluginId: string, sandbox: NodeVM): void {
-    const interval = setInterval(() => {
-      const stats = this.stats.get(pluginId);
-      if (!stats) return;
-
-      // Update resource usage statistics
-      const usage = process.cpuUsage();
-      stats.cpuUsage = usage.user + usage.system;
-      stats.memoryUsage = process.memoryUsage().heapUsed;
-      stats.lastActivity = Date.now();
-
-      // Check resource limits
-      if (this.isExceedingLimits(stats, config.limits)) {
-        this.handleResourceViolation(pluginId);
-      }
-
-      this.eventEmitter.emit('stats', { pluginId, stats });
-    }, 1000);
-
-    // Cleanup on sandbox destruction
-    sandbox.on('dispose', () => {
-      clearInterval(interval);
-    });
-  }
-
-  private setupConsoleRedirection(pluginId: string, sandbox: NodeVM): void {
-    const console = {
-      log: (...args: any[]) => this.handleLog(pluginId, 'log', ...args),
-      error: (...args: any[]) => this.handleLog(pluginId, 'error', ...args),
-      warn: (...args: any[]) => this.handleLog(pluginId, 'warn', ...args),
-      info: (...args: any[]) => this.handleLog(pluginId, 'info', ...args)
-    };
-
-    sandbox.freeze('console', console);
-  }
-
-  private async createPluginContext(
-    pluginId: string,
-    sandbox: NodeVM,
-    config: SandboxConfig
-  ): Promise<PluginContext> {
-    return {
-      api: this.createPluginAPI(pluginId, config),
-      storage: await this.createPluginStorage(pluginId),
-      events: this.createEventBus(pluginId),
-      utils: this.createPluginUtils(pluginId)
-    };
-  }
-
-  private createPluginAPI(pluginId: string, config: SandboxConfig): any {
-    return {
-      // Implement secure API methods
-      http: this.createSecureHTTPClient(pluginId, config),
-      database: this.createSecureDatabaseAccess(pluginId, config),
-      cache: this.createCacheAccess(pluginId),
-      // Add more API endpoints as needed
-    };
-  }
-
-  private async createPluginStorage(pluginId: string): Promise<any> {
-    const storageDir = path.join(process.cwd(), 'data', 'plugins', pluginId);
-    await fs.mkdir(storageDir, { recursive: true });
-
-    return {
-      // Implement secure storage methods
-      async get(key: string): Promise<any> {
-        // Implementation
-      },
-      async set(key: string, value: any): Promise<void> {
-        // Implementation
-      },
-      async delete(key: string): Promise<void> {
-        // Implementation
-      }
-    };
-  }
-
-  private createEventBus(pluginId: string): any {
-    const eventBus = new EventEmitter();
-    
-    return {
-      on: (event: string, handler: Function) => {
-        // Implement secure event handling
-      },
-      emit: (event: string, data: any) => {
-        // Implement secure event emission
-      }
-    };
-  }
-
-  private createPluginUtils(pluginId: string): any {
-    return {
-      // Implement utility functions
-    };
-  }
-
-  private handleLog(pluginId: string, level: string, ...args: any[]): void {
-    logger.log({
-      level,
-      message: args.join(' '),
-      pluginId,
-      timestamp: new Date().toISOString()
-    });
-  }
-
-  private isExceedingLimits(stats: SandboxStats, limits: ResourceLimits): boolean {
-    return (
-      stats.memoryUsage > limits.maxMemory ||
-      stats.cpuUsage > limits.maxCpu ||
-      stats.activeConnections > limits.maxConnections
+  private filterEnvironmentVariables(env: Record<string, string>): Record<string, string> {
+    // Filter sensitive environment variables
+    const allowedVars = ['NODE_ENV', 'PUBLIC_URL'];
+    return Object.fromEntries(
+      Object.entries(env).filter(([key]) => allowedVars.includes(key))
     );
   }
 
-  private handleResourceViolation(pluginId: string): void {
-    // Implement resource violation handling
-    logger.warn(`Plugin ${pluginId} exceeded resource limits`);
-    this.eventEmitter.emit('violation', { pluginId, timestamp: Date.now() });
+  private setupEventHandlers(pluginId: string, sandbox: NodeVM): void {
+    sandbox.on('console.log', (...args) => {
+      this.eventEmitter.emit('log', {
+        pluginId,
+        level: 'info',
+        message: args.join(' '),
+        timestamp: new Date()
+      });
+    });
+
+    sandbox.on('error', (error) => {
+      this.eventEmitter.emit('error', {
+        pluginId,
+        error,
+        timestamp: new Date()
+      });
+    });
   }
 
-  async destroySandbox(pluginId: string): Promise<void> {
+  private startMonitoring(pluginId: string): void {
+    this.resourceMonitor.startMonitoring(pluginId, (metrics) => {
+      this.eventEmitter.emit('metrics', {
+        pluginId,
+        ...metrics,
+        timestamp: new Date()
+      });
+
+      if (metrics.exceedsLimits) {
+        this.handleResourceViolation(pluginId, metrics);
+      }
+    });
+  }
+
+  private async handleResourceViolation(pluginId: string, metrics: any): Promise<void> {
+    this.eventEmitter.emit('violation', {
+      pluginId,
+      metrics,
+      timestamp: new Date()
+    });
+
+    // Attempt to gracefully stop the plugin
+    await this.stopPlugin(pluginId);
+  }
+
+  async runInSandbox(pluginId: string, code: string): Promise<any> {
     const sandbox = this.sandboxes.get(pluginId);
-    if (sandbox) {
-      sandbox.dispose();
-      this.sandboxes.delete(pluginId);
-      this.stats.delete(pluginId);
+    if (!sandbox) {
+      throw new Error(`Sandbox not found for plugin: ${pluginId}`);
+    }
+
+    try {
+      return await sandbox.run(new VMScript(code));
+    } catch (error) {
+      this.eventEmitter.emit('error', {
+        pluginId,
+        error,
+        timestamp: new Date()
+      });
+      throw error;
     }
   }
 
-  getStats(pluginId: string): SandboxStats | null {
-    return this.stats.get(pluginId) || null;
+  async stopPlugin(pluginId: string): Promise<void> {
+    const sandbox = this.sandboxes.get(pluginId);
+    if (sandbox) {
+      // Stop monitoring
+      this.resourceMonitor.stopMonitoring(pluginId);
+
+      // Clean up network rules
+      await this.networkController.cleanupRules(pluginId);
+
+      // Clean up filesystem
+      await this.fsController.cleanup(pluginId);
+
+      // Stop processes
+      await this.processManager.cleanup(pluginId);
+
+      // Dispose sandbox
+      sandbox.dispose();
+      this.sandboxes.delete(pluginId);
+    }
   }
 
-  onStats(handler: (stats: any) => void): void {
-    this.eventEmitter.on('stats', handler);
+  async cleanup(pluginId: string): Promise<void> {
+    await this.stopPlugin(pluginId);
+    
+    // Clean up sandbox directory
+    const sandboxDir = path.join(process.cwd(), 'sandboxes', pluginId);
+    await fs.rm(sandboxDir, { recursive: true, force: true });
+  }
+
+  // Event listeners
+  onLog(handler: (log: any) => void): void {
+    this.eventEmitter.on('log', handler);
+  }
+
+  onError(handler: (error: any) => void): void {
+    this.eventEmitter.on('error', handler);
+  }
+
+  onMetrics(handler: (metrics: any) => void): void {
+    this.eventEmitter.on('metrics', handler);
   }
 
   onViolation(handler: (violation: any) => void): void {
