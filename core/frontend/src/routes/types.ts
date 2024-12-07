@@ -10,3 +10,14 @@ export interface RouteConfig {
   roles?: string[];
   children?: RouteConfig[];
 }
+
+import { ReactNode } from 'react';
+
+export interface RouteConfig {
+  path: string;
+  element: ReactNode;
+  children?: RouteConfig[];
+  isPublic?: boolean;
+  roles?: string[];
+  layout?: ReactNode;
+}
