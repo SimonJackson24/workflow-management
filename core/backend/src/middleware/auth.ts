@@ -191,3 +191,33 @@ export const checkFeatureAccess = (feature: string) => {
     next();
   };
 };
+
+/**
+ * Check API rate limits
+ */
+export const checkApiLimits = asyncHandler(async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  const organization = req.organization;
+
+  // Get current API usage
+  const currentUsage = organization.usage.apiCalls.current;
+  const limit = organization.subscription.limits.apiCalls;
+
+  if (currentUsage >= limit) {
+    throw new ApiError(
+      429,
+      'API call limit exceeded for current billing period'
+    );
+  }
+
+  // Increment API usage
+  await Organization.findByIdAndUpdate(
+    organization._id,
+    { $inc: { 'usage.apiCalls.current': 1 } }
+  );
+
+  next();
+});
