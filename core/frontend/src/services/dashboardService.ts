@@ -1,42 +1,69 @@
 // core/frontend/src/services/dashboardService.ts
 
 import { api } from '../utils/api';
-import { 
-  MetricData, 
-  Activity, 
-  Plugin, 
-  UsageDataPoint 
+import {
+  MetricData,
+  Activity,
+  Plugin,
+  UsageDataPoint
 } from '../types/dashboard.types';
 
-export const dashboardService = {
+class DashboardService {
   async getMetrics(): Promise<MetricData[]> {
-    const response = await api.get('/api/dashboard/metrics');
-    return response.data;
-  },
+    try {
+      const response = await api.get('/api/dashboard/metrics');
+      return response.data;
+    } catch (error) {
+      throw new Error('Failed to fetch metrics');
+    }
+  }
 
   async getActivities(): Promise<Activity[]> {
-    const response = await api.get('/api/dashboard/activities');
-    return response.data;
-  },
+    try {
+      const response = await api.get('/api/dashboard/activities');
+      return response.data;
+    } catch (error) {
+      throw new Error('Failed to fetch activities');
+    }
+  }
 
   async getPlugins(): Promise<Plugin[]> {
-    const response = await api.get('/api/dashboard/plugins');
-    return response.data;
-  },
+    try {
+      const response = await api.get('/api/dashboard/plugins');
+      return response.data;
+    } catch (error) {
+      throw new Error('Failed to fetch plugins');
+    }
+  }
 
   async getUsage(timeRange: string): Promise<UsageDataPoint[]> {
-    const response = await api.get(`/api/dashboard/usage?timeRange=${timeRange}`);
-    return response.data;
-  },
-
-  async refreshDashboard() {
-    const [metrics, activities, plugins, usage] = await Promise.all([
-      this.getMetrics(),
-      this.getActivities(),
-      this.getPlugins(),
-      this.getUsage('7d')
-    ]);
-
-    return { metrics, activities, plugins, usage };
+    try {
+      const response = await api.get(`/api/dashboard/usage?timeRange=${timeRange}`);
+      return response.data;
+    } catch (error) {
+      throw new Error('Failed to fetch usage data');
+    }
   }
-};
+
+  async refreshAll(timeRange: string = '7d') {
+    try {
+      const [metrics, activities, plugins, usage] = await Promise.all([
+        this.getMetrics(),
+        this.getActivities(),
+        this.getPlugins(),
+        this.getUsage(timeRange)
+      ]);
+
+      return {
+        metrics,
+        activities,
+        plugins,
+        usage
+      };
+    } catch (error) {
+      throw new Error('Failed to refresh dashboard data');
+    }
+  }
+}
+
+export const dashboardService = new DashboardService();
