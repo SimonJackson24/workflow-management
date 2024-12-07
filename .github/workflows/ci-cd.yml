@@ -1,0 +1,136 @@
+# .github/workflows/ci-cd.yml
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: workflow-system
+  EKS_CLUSTER: wms-cluster
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      mongodb:
+        image: mongo:4.4
+        ports:
+          - 27017:27017
+      redis:
+        image: redis:6
+        ports:
+          - 6379:6379
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v2
+      with:
+        node-version: '16'
+        cache: 'npm'
+
+    - name: Install Dependencies
+      run: |
+        cd core/backend
+        npm ci
+        cd ../frontend
+        npm ci
+
+    - name: Run Linting
+      run: |
+        cd core/backend
+        npm run lint
+        cd ../frontend
+        npm run lint
+
+    - name: Run Tests
+      run: |
+        cd core/backend
+        npm test
+        cd ../frontend
+        npm test
+
+    - name: Run E2E Tests
+      run: |
+        cd core/backend
+        npm run test:e2e
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+
+    - name: Build and push Docker images
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        # Build and push backend
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY/backend:$IMAGE_TAG ./core/backend
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY/backend:$IMAGE_TAG
+        
+        # Build and push frontend
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY/frontend:$IMAGE_TAG ./core/frontend
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY/frontend:$IMAGE_TAG
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Install Helm
+      uses: azure/setup-helm@v1
+      with:
+        version: v3.8.0
+
+    - name: Configure kubectl
+      run: |
+        aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }}
+
+    - name: Deploy to EKS
+      env:
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        helm upgrade --install workflow-system ./deployment/helm/workflow-system \
+          --namespace workflow-system \
+          --create-namespace \
+          --set backend.image.tag=$IMAGE_TAG \
+          --set frontend.image.tag=$IMAGE_TAG \
+          --set mongodb.auth.rootPassword=${{ secrets.MONGODB_ROOT_PASSWORD }} \
+          --set mongodb.auth.password=${{ secrets.MONGODB_PASSWORD }} \
+          --set redis.auth.password=${{ secrets.REDIS_PASSWORD }}
+
+    - name: Verify deployment
+      run: |
+        kubectl rollout status deployment/wms-backend -n workflow-system
+        kubectl rollout status deployment/wms-frontend -n workflow-system
