@@ -1,130 +1,137 @@
-import React, { useEffect, useState } from 'react';
-import {
-  Grid,
-  Paper,
-  Typography,
-  Box,
-  Card,
-  CardContent,
-  CircularProgress
-} from '@mui/material';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  Title,
-  Tooltip,
-  Legend
-} from 'chart.js';
-import { Line, Bar } from 'react-chartjs-2';
-import { useAuth } from '../contexts/AuthContext';
-import { usePlugins } from '../contexts/PluginContext';
-import DashboardStats from '../components/dashboard/DashboardStats';
-import RecentActivity from '../components/dashboard/RecentActivity';
-import TasksSummary from '../components/dashboard/TasksSummary';
-import PluginStatus from '../components/dashboard/PluginStatus';
+// core/frontend/src/pages/Dashboard.tsx
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  Title,
-  Tooltip,
-  Legend
-);
+import React, { useEffect } from 'react';
+import {
+  Box,
+  Grid,
+  CircularProgress,
+  Alert,
+  Typography,
+  Paper,
+  Button,
+  useTheme
+} from '@mui/material';
+import { Refresh as RefreshIcon } from '@mui/icons-material';
+import MetricsCards from '../components/dashboard/MetricsCards';
+import ActivityFeed from '../components/dashboard/ActivityFeed';
+import QuickActions from '../components/dashboard/QuickActions';
+import UsageChart from '../components/dashboard/UsageChart';
+import RecentPlugins from '../components/dashboard/RecentPlugins';
+import { DashboardErrorBoundary } from '../components/dashboard/ErrorBoundary';
+import { useDashboard } from '../hooks/useDashboard';
+import { dashboardStyles } from '../styles/dashboard.styles';
 
 const Dashboard: React.FC = () => {
-  const { user, organization } = useAuth();
-  const { plugins } = usePlugins();
-  const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState<any>(null);
+  const theme = useTheme();
+  const styles = dashboardStyles(theme);
+  const {
+    metrics,
+    activities,
+    plugins,
+    usage,
+    refreshDashboard,
+    loading,
+    error,
+    lastUpdated
+  } = useDashboard();
 
   useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        // Fetch dashboard data from your API
-        // const data = await dashboardService.getStats();
-        // setStats(data);
-        setLoading(false);
-      } catch (error) {
-        console.error('Error fetching dashboard data:', error);
-        setLoading(false);
-      }
-    };
-
-    fetchDashboardData();
+    document.title = 'Dashboard - Workflow System';
   }, []);
 
-  if (loading) {
+  if (loading && !metrics.data.length) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight={400}>
         <CircularProgress />
       </Box>
     );
   }
 
   return (
-    <Box>
-      <Typography variant="h4" gutterBottom>
-        Welcome back, {user?.firstName}!
-      </Typography>
-
-      <Grid container spacing={3}>
-        {/* Stats Overview */}
-        <Grid item xs={12}>
-          <DashboardStats stats={stats} />
-        </Grid>
-
-        {/* Charts */}
-        <Grid item xs={12} md={8}>
-          <Paper sx={{ p: 2 }}>
-            <Typography variant="h6" gutterBottom>
-              Activity Overview
-            </Typography>
-            <Box height={300}>
-              <Line
-                data={{
-                  labels: ['January', 'February', 'March', 'April', 'May', 'June'],
-                  datasets: [
-                    {
-                      label: 'User Activity',
-                      data: [65, 59, 80, 81, 56, 55],
-                      fill: false,
-                      borderColor: 'rgb(75, 192, 192)',
-                      tension: 0.1,
-                    },
-                  ],
-                }}
-                options={{
-                  responsive: true,
-                  maintainAspectRatio: false,
-                }}
-              />
+    <DashboardErrorBoundary>
+      <Box sx={styles.root}>
+        {/* Header Section */}
+        <Box sx={styles.header}>
+          <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+            <Box>
+              <Typography variant="h4" gutterBottom>
+                Dashboard
+              </Typography>
+              <Typography variant="body2" color="textSecondary">
+                {lastUpdated
+                  ? `Last updated ${new Date(lastUpdated).toLocaleString()}`
+                  : 'Updating...'}
+              </Typography>
             </Box>
-          </Paper>
-        </Grid>
+            <Button
+              startIcon={<RefreshIcon />}
+              onClick={refreshDashboard}
+              disabled={loading}
+            >
+              Refresh
+            </Button>
+          </Box>
 
-        {/* Recent Activity */}
-        <Grid item xs={12} md={4}>
-          <RecentActivity />
-        </Grid>
+          {error && (
+            <Alert severity="error" sx={{ mb: 3 }}>
+              {error}
+            </Alert>
+          )}
+        </Box>
 
-        {/* Tasks Summary */}
-        <Grid item xs={12} md={6}>
-          <TasksSummary />
-        </Grid>
+        {/* Main Content */}
+        <Grid container spacing={3}>
+          {/* Metrics Section */}
+          <Grid item xs={12}>
+            <MetricsCards
+              metrics={metrics.data}
+              loading={metrics.loading}
+              error={metrics.error}
+            />
+          </Grid>
 
-        {/* Plugin Status */}
-        <Grid item xs={12} md={6}>
-          <PluginStatus plugins={plugins} />
+          {/* Usage Chart */}
+          <Grid item xs={12} lg={8}>
+            <Paper sx={styles.paper}>
+              <UsageChart
+                data={usage.data}
+                loading={usage.loading}
+                error={usage.error}
+              />
+            </Paper>
+          </Grid>
+
+          {/* Quick Actions */}
+          <Grid item xs={12} lg={4}>
+            <Paper sx={styles.paper}>
+              <QuickActions />
+            </Paper>
+          </Grid>
+
+          {/* Activity Feed */}
+          <Grid item xs={12} md={6}>
+            <Paper sx={styles.paper}>
+              <ActivityFeed
+                activities={activities.data}
+                loading={activities.loading}
+                error={activities.error}
+              />
+            </Paper>
+          </Grid>
+
+          {/* Recent Plugins */}
+          <Grid item xs={12} md={6}>
+            <Paper sx={styles.paper}>
+              <RecentPlugins
+                plugins={plugins.data}
+                loading={plugins.loading}
+                error={plugins.error}
+              />
+            </Paper>
+          </Grid>
         </Grid>
-      </Grid>
-    </Box>
+      </Box>
+    </DashboardErrorBoundary>
   );
 };
 
