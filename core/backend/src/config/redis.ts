@@ -204,4 +204,21 @@ class RedisService {
     multi.incr(key);
     multi.expire(key, windowSeconds);
     const results = await multi.exec();
-    return results
+    return results ? (results[0][1] as number) : 0;
+  }
+
+  /**
+   * Cleanup method
+   */
+  async cleanup(): Promise<void> {
+    await this.client.quit();
+    await this.subscriber.quit();
+    await this.publisher.quit();
+  }
+}
+
+// Export singleton instance
+export const redisClient = RedisService.getInstance().getClient();
+export const redisSubscriber = RedisService.getInstance().getSubscriber();
+export const redisPublisher = RedisService.getInstance().getPublisher();
+export const redisService = RedisService.getInstance();
