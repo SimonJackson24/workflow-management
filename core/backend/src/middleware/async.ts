@@ -167,3 +167,56 @@ export const asyncHandlerWithRetry = (
  * router.get('/route', asyncHandlerWithCircuitBreaker(
  *   async (req, res) => {
  *     // ... async code
+ *   },
+ *   {
+ *     failureThreshold: 5,
+ *     resetTimeout: 60000
+ *   }
+ * ));
+ */
+interface CircuitBreakerOptions {
+  failureThreshold: number;
+  resetTimeout: number;
+}
+
+export const asyncHandlerWithCircuitBreaker = (
+  fn: (req: Request, res: Response, next: NextFunction) => Promise<any>,
+  options: CircuitBreakerOptions = {
+    failureThreshold: 5,
+    resetTimeout: 60000
+  }
+) => {
+  let failures = 0;
+  let lastFailureTime: number | null = null;
+  let circuitOpen = false;
+
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      // Check if circuit is open
+      if (circuitOpen) {
+        if (lastFailureTime && Date.now() - lastFailureTime >= options.resetTimeout) {
+          // Reset circuit
+          circuitOpen = false;
+          failures = 0;
+        } else {
+          throw new Error('Circuit breaker is open');
+        }
+      }
+
+      // Execute handler
+      await fn(req, res, next);
+      
+      // Reset failures on success
+      failures = 0;
+    } catch (error) {
+      failures++;
+      lastFailureTime = Date.now();
+
+      if (failures >= options.failureThreshold) {
+        circuitOpen = true;
+      }
+
+      next(error);
+    }
+  };
+};
