@@ -5,165 +5,186 @@ import {
   Box,
   Paper,
   Typography,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  TablePagination,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemIcon,
   Chip,
+  Button,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
   IconButton,
   Tooltip,
-  CircularProgress,
-  Alert
+  CircularProgress
 } from '@mui/material';
 import {
-  Info as InfoIcon,
-  FilterList as FilterIcon
+  Login as LoginIcon,
+  Logout as LogoutIcon,
+  Edit as EditIcon,
+  Security as SecurityIcon,
+  Settings as SettingsIcon,
+  FilterList as FilterIcon,
+  Refresh as RefreshIcon
 } from '@mui/icons-material';
 import { format } from 'date-fns';
-import { ActivityLog } from '../../types';
-import ActivityDetailsDialog from './ActivityDetailsDialog';
+import { useUserActivity } from '../../hooks/useUserActivity';
+import { ActivityType, UserActivity } from '../../types/activity.types';
 
 interface UserActivityLogProps {
   userId: string;
 }
 
-const UserActivityLog: React.FC<UserActivityLogProps> = ({ userId }) => {
-  const [activities, setActivities] = useState<ActivityLog[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
-  const [selectedActivity, setSelectedActivity] = useState<ActivityLog | null>(null);
-  const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
+const activityIcons: Record<ActivityType, React.ReactElement> = {
+  login: <LoginIcon />,
+  logout: <LogoutIcon />,
+  profile_update: <EditIcon />,
+  security_change: <SecurityIcon />,
+  settings_change: <SettingsIcon />
+};
 
-  useEffect(() => {
-    fetchActivities();
-  }, [userId, page, rowsPerPage]);
+export const UserActivityLog: React.FC<UserActivityLogProps> = ({ userId }) => {
+  const {
+    activities,
+    loading,
+    error,
+    fetchActivities,
+    filters,
+    setFilters
+  } = useUserActivity(userId);
 
-  const fetchActivities = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch(
-        `/api/users/${userId}/activities?page=${page}&limit=${rowsPerPage}`
-      );
-      const data = await response.json();
-      setActivities(data.activities);
-    } catch (error) {
-      setError('Failed to load activity logs');
-      console.error('Error loading activities:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [showFilters, setShowFilters] = useState(false);
 
-  const getActionColor = (action: string): "default" | "primary" | "secondary" | "error" | "info" | "success" | "warning" => {
-    switch (action) {
+  const getActivityDescription = (activity: UserActivity): string => {
+    switch (activity.type) {
       case 'login':
-        return 'info';
+        return `Logged in from ${activity.metadata?.ipAddress || 'unknown location'}`;
       case 'logout':
-        return 'default';
-      case 'update':
-        return 'primary';
-      case 'delete':
-        return 'error';
-      case 'create':
-        return 'success';
+        return 'Logged out';
+      case 'profile_update':
+        return `Updated ${activity.metadata?.fields?.join(', ')}`;
+      case 'security_change':
+        return `Changed ${activity.metadata?.securitySetting}`;
+      case 'settings_change':
+        return `Updated ${activity.metadata?.setting}`;
       default:
-        return 'default';
+        return activity.description;
     }
   };
 
-  const handleDetailsClick = (activity: ActivityLog) => {
-    setSelectedActivity(activity);
-    setDetailsDialogOpen(true);
+  const handleRefresh = () => {
+    fetchActivities();
   };
-
-  if (loading) {
-    return (
-      <Box display="flex" justifyContent="center" p={3}>
-        <CircularProgress />
-      </Box>
-    );
-  }
-
-  if (error) {
-    return (
-      <Alert severity="error" sx={{ mb: 2 }}>
-        {error}
-      </Alert>
-    );
-  }
 
   return (
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
         <Typography variant="h6">Activity Log</Typography>
-        <Tooltip title="Filter activities">
-          <IconButton>
-            <FilterIcon />
-          </IconButton>
-        </Tooltip>
+        <Box>
+          <Tooltip title="Filter">
+            <IconButton onClick={() => setShowFilters(!showFilters)}>
+              <FilterIcon />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Refresh">
+            <IconButton onClick={handleRefresh} disabled={loading}>
+              <RefreshIcon />
+            </IconButton>
+          </Tooltip>
+        </Box>
       </Box>
 
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Action</TableCell>
-              <TableCell>Timestamp</TableCell>
-              <TableCell>IP Address</TableCell>
-              <TableCell>Details</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {activities.map((activity) => (
-              <TableRow key={activity.id}>
-                <TableCell>
-                  <Chip
-                    label={activity.action}
-                    color={getActionColor(activity.action)}
-                    size="small"
-                  />
-                </TableCell>
-                <TableCell>
-                  {format(new Date(activity.timestamp), 'PPpp')}
-                </TableCell>
-                <TableCell>{activity.ipAddress}</TableCell>
-                <TableCell>
-                  <IconButton
-                    size="small"
-                    onClick={() => handleDetailsClick(activity)}
-                  >
-                    <InfoIcon />
-                  </IconButton>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        <TablePagination
-          component="div"
-          count={-1}
-          rowsPerPage={rowsPerPage}
-          page={page}
-          onPageChange={(e, newPage) => setPage(newPage)}
-          onRowsPerPageChange={(e) => {
-            setRowsPerPage(parseInt(e.target.value, 10));
-            setPage(0);
-          }}
-        />
-      </TableContainer>
+      {showFilters && (
+        <Box mb={2} p={2} bgcolor="background.default" borderRadius={1}>
+          <Grid container spacing={2}>
+            <Grid item xs={12} sm={4}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Activity Type</InputLabel>
+                <Select
+                  value={filters.type || 'all'}
+                  onChange={(e) => setFilters({ ...filters, type: e.target.value })}
+                >
+                  <MenuItem value="all">All Activities</MenuItem>
+                  <MenuItem value="login">Logins</MenuItem>
+                  <MenuItem value="security_change">Security Changes</MenuItem>
+                  <MenuItem value="profile_update">Profile Updates</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} sm={4}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Time Range</InputLabel>
+                <Select
+                  value={filters.timeRange || '7d'}
+                  onChange={(e) => setFilters({ ...filters, timeRange: e.target.value })}
+                >
+                  <MenuItem value="24h">Last 24 Hours</MenuItem>
+                  <MenuItem value="7d">Last 7 Days</MenuItem>
+                  <MenuItem value="30d">Last 30 Days</MenuItem>
+                  <MenuItem value="custom">Custom Range</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+          </Grid>
+        </Box>
+      )}
 
-      <ActivityDetailsDialog
-        open={detailsDialogOpen}
-        onClose={() => setDetailsDialogOpen(false)}
-        activity={selectedActivity}
-      />
+      {loading ? (
+        <Box display="flex" justifyContent="center" p={3}>
+          <CircularProgress />
+        </Box>
+      ) : error ? (
+        <Alert severity="error">{error}</Alert>
+      ) : (
+        <List>
+          {activities.map((activity) => (
+            <ListItem
+              key={activity.id}
+              sx={{
+                borderBottom: '1px solid',
+                borderColor: 'divider'
+              }}
+            >
+              <ListItemIcon>
+                {activityIcons[activity.type]}
+              </ListItemIcon>
+              <ListItemText
+                primary={getActivityDescription(activity)}
+                secondary={
+                  <Box display="flex" alignItems="center" gap={1}>
+                    <Typography variant="caption">
+                      {format(new Date(activity.timestamp), 'PPpp')}
+                    </Typography>
+                    {activity.metadata?.browser && (
+                      <Chip
+                        size="small"
+                        label={activity.metadata.browser}
+                        variant="outlined"
+                      />
+                    )}
+                    {activity.metadata?.location && (
+                      <Chip
+                        size="small"
+                        label={activity.metadata.location}
+                        variant="outlined"
+                      />
+                    )}
+                  </Box>
+                }
+              />
+            </ListItem>
+          ))}
+        </List>
+      )}
+
+      {activities.length === 0 && !loading && (
+        <Box textAlign="center" py={3}>
+          <Typography color="textSecondary">
+            No activity found for the selected filters
+          </Typography>
+        </Box>
+      )}
     </Box>
   );
 };
-
-export default UserActivityLog;
