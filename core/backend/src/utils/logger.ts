@@ -174,4 +174,45 @@ export const logAudit = (action: string, userId: string, details: object = {}) =
  */
 export const customLevels = {
   audit: (message: string, metadata?: any) => logger.info(message, { type: 'AUDIT', ...metadata }),
-  security: (message: string, metadata?: any)
+  security: (message: string, metadata?: any) => logger.warn(message, { type: 'SECURITY', ...metadata }),
+  performance: (message: string, metadata?: any) => logger.info(message, { type: 'PERFORMANCE', ...metadata }),
+  business: (message: string, metadata?: any) => logger.info(message, { type: 'BUSINESS', ...metadata })
+};
+
+/**
+ * Initialize Logger
+ */
+export const initializeLogger = () => {
+  // Create logs directory if it doesn't exist
+  const fs = require('fs');
+  const logsDir = path.join(process.cwd(), 'logs');
+  
+  if (!fs.existsSync(logsDir)) {
+    fs.mkdirSync(logsDir);
+  }
+
+  // Log unhandled exceptions
+  process.on('uncaughtException', (error) => {
+    logger.error('Uncaught Exception:', error);
+    process.exit(1);
+  });
+
+  // Log unhandled promise rejections
+  process.on('unhandledRejection', (error) => {
+    logger.error('Unhandled Rejection:', error);
+  });
+
+  logger.info('Logger initialized successfully');
+};
+
+export default {
+  logger,
+  stream,
+  logRequest,
+  logError,
+  logSecurity,
+  logPerformance,
+  logAudit,
+  customLevels,
+  initializeLogger
+};
