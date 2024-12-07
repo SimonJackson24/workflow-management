@@ -282,3 +282,76 @@ const OrganizationSchema: Schema = new Schema({
       type: String,
       enum: ['owner', 'admin', 'manager', 'member'],
       required: true
+    },
+    permissions: [String],
+    addedAt: {
+      type: Date,
+      default: Date.now
+    },
+    invitedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true
+    }
+  }],
+  plugins: [{
+    id: {
+      type: String,
+      required: true
+    },
+    enabled: {
+      type: Boolean,
+      default: true
+    },
+    config: Schema.Types.Mixed,
+    installedAt: {
+      type: Date,
+      default: Date.now
+    },
+    installedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true
+    }
+  }],
+  usage: {
+    activeUsers: {
+      type: Number,
+      default: 0
+    },
+    storageUsed: {
+      type: Number,
+      default: 0
+    },
+    apiCalls: {
+      current: {
+        type: Number,
+        default: 0
+      },
+      lastReset: {
+        type: Date,
+        default: Date.now
+      }
+    }
+  },
+  metadata: Schema.Types.Mixed
+}, {
+  timestamps: true
+});
+
+// Indexes
+OrganizationSchema.index({ email: 1 }, { unique: true });
+OrganizationSchema.index({ 'subscription.stripeCustomerId': 1 });
+OrganizationSchema.index({ 'members.userId': 1 });
+OrganizationSchema.index({ createdAt: 1 });
+
+// Add any pre/post hooks here
+OrganizationSchema.pre('save', function(next) {
+  if (this.isNew) {
+    // Set default limits based on plan
+    // You might want to move this to a separate service
+  }
+  next();
+});
+
+export default mongoose.model<IOrganization>('Organization', OrganizationSchema);
