@@ -5,9 +5,9 @@ import {
   Box,
   Paper,
   Typography,
+  Grid,
   TextField,
   Button,
-  Grid,
   Divider,
   Alert,
   Select,
@@ -17,69 +17,73 @@ import {
   Switch,
   FormControlLabel
 } from '@mui/material';
-import { useAuth } from '../../contexts/AuthContext';
-import { useOrganization } from '../../contexts/OrganizationContext';
+import { useOrganization } from '../../hooks/useOrganization';
 import { CountrySelect } from '../../components/common/CountrySelect';
 import { TimezoneSelect } from '../../components/common/TimezoneSelect';
+import { BrandingUpload } from '../../components/settings/BrandingUpload';
 
 const OrganizationSettings: React.FC = () => {
-  const { organization } = useAuth();
-  const { updateOrganization } = useOrganization();
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const { organization, updateOrganization, loading, error } = useOrganization();
   const [formData, setFormData] = useState({
     name: organization?.name || '',
     email: organization?.email || '',
     phone: organization?.phone || '',
     website: organization?.website || '',
-    timezone: organization?.timezone || '',
-    country: organization?.address?.country || '',
     address: {
       street: organization?.address?.street || '',
       city: organization?.address?.city || '',
       state: organization?.address?.state || '',
-      postalCode: organization?.address?.postalCode || ''
+      postalCode: organization?.address?.postalCode || '',
+      country: organization?.address?.country || ''
+    },
+    branding: {
+      logo: organization?.branding?.logo || '',
+      colors: {
+        primary: organization?.branding?.colors?.primary || '#1976d2',
+        secondary: organization?.branding?.colors?.secondary || '#dc004e'
+      },
+      favicon: organization?.branding?.favicon || ''
     },
     settings: {
-      language: organization?.settings?.language || 'en',
+      timezone: organization?.settings?.timezone || 'UTC',
       dateFormat: organization?.settings?.dateFormat || 'YYYY-MM-DD',
-      notifications: {
-        email: organization?.settings?.notifications?.email || true,
-        slack: organization?.settings?.notifications?.slack || false
-      }
+      language: organization?.settings?.language || 'en',
+      currency: organization?.settings?.currency || 'USD'
     }
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setError(null);
-    setSuccess(null);
-
     try {
       await updateOrganization(formData);
-      setSuccess('Organization settings updated successfully');
-    } catch (err: any) {
-      setError(err.message || 'Failed to update organization settings');
-    } finally {
-      setLoading(false);
+    } catch (err) {
+      console.error('Failed to update organization:', err);
     }
   };
 
   return (
     <Box>
-      <Paper sx={{ p: 3, mb: 3 }}>
+      <Paper sx={{ p: 3 }}>
         <Typography variant="h6" gutterBottom>
           Organization Settings
         </Typography>
         <Divider sx={{ mb: 3 }} />
 
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-        {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
+        {error && (
+          <Alert severity="error" sx={{ mb: 3 }}>
+            {error}
+          </Alert>
+        )}
 
         <form onSubmit={handleSubmit}>
           <Grid container spacing={3}>
+            {/* Basic Information */}
+            <Grid item xs={12}>
+              <Typography variant="subtitle1" gutterBottom>
+                Basic Information
+              </Typography>
+            </Grid>
+
             <Grid item xs={12} md={6}>
               <TextField
                 fullWidth
@@ -119,20 +123,7 @@ const OrganizationSettings: React.FC = () => {
               />
             </Grid>
 
-            <Grid item xs={12} md={6}>
-              <TimezoneSelect
-                value={formData.timezone}
-                onChange={(timezone) => setFormData({ ...formData, timezone })}
-              />
-            </Grid>
-
-            <Grid item xs={12} md={6}>
-              <CountrySelect
-                value={formData.country}
-                onChange={(country) => setFormData({ ...formData, country })}
-              />
-            </Grid>
-
+            {/* Address */}
             <Grid item xs={12}>
               <Typography variant="subtitle1" gutterBottom>
                 Address
@@ -151,7 +142,7 @@ const OrganizationSettings: React.FC = () => {
               />
             </Grid>
 
-            <Grid item xs={12} md={4}>
+            <Grid item xs={12} md={6}>
               <TextField
                 fullWidth
                 label="City"
@@ -163,7 +154,7 @@ const OrganizationSettings: React.FC = () => {
               />
             </Grid>
 
-            <Grid item xs={12} md={4}>
+            <Grid item xs={12} md={6}>
               <TextField
                 fullWidth
                 label="State/Province"
@@ -175,7 +166,7 @@ const OrganizationSettings: React.FC = () => {
               />
             </Grid>
 
-            <Grid item xs={12} md={4}>
+            <Grid item xs={12} md={6}>
               <TextField
                 fullWidth
                 label="Postal Code"
@@ -187,6 +178,71 @@ const OrganizationSettings: React.FC = () => {
               />
             </Grid>
 
+            <Grid item xs={12} md={6}>
+              <CountrySelect
+                value={formData.address.country}
+                onChange={(value) => setFormData({
+                  ...formData,
+                  address: { ...formData.address, country: value }
+                })}
+              />
+            </Grid>
+
+            {/* Branding */}
+            <Grid item xs={12}>
+              <Typography variant="subtitle1" gutterBottom>
+                Branding
+              </Typography>
+            </Grid>
+
+            <Grid item xs={12}>
+              <BrandingUpload
+                logo={formData.branding.logo}
+                favicon={formData.branding.favicon}
+                onLogoChange={(url) => setFormData({
+                  ...formData,
+                  branding: { ...formData.branding, logo: url }
+                })}
+                onFaviconChange={(url) => setFormData({
+                  ...formData,
+                  branding: { ...formData.branding, favicon: url }
+                })}
+              />
+            </Grid>
+
+            <Grid item xs={12} md={6}>
+              <TextField
+                fullWidth
+                label="Primary Color"
+                type="color"
+                value={formData.branding.colors.primary}
+                onChange={(e) => setFormData({
+                  ...formData,
+                  branding: {
+                    ...formData.branding,
+                    colors: { ...formData.branding.colors, primary: e.target.value }
+                  }
+                })}
+              />
+            </Grid>
+
+            <Grid item xs={12} md={6}>
+              <TextField
+                fullWidth
+                label="Secondary Color"
+                type="color"
+                value={formData.branding.colors.secondary}
+                onChange={(e) => setFormData({
+                  ...formData,
+                  branding: {
+                    ...formData.branding,
+                    colors: { ...formData.branding.colors, secondary: e.target.value }
+                  }
+                })}
+              />
+            </Grid>
+
+            {/* Preferences */}
             <Grid item xs={12}>
               <Typography variant="subtitle1" gutterBottom>
                 Preferences
@@ -194,21 +250,13 @@ const OrganizationSettings: React.FC = () => {
             </Grid>
 
             <Grid item xs={12} md={6}>
-              <FormControl fullWidth>
-                <InputLabel>Language</InputLabel>
-                <Select
-                  value={formData.settings.language}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    settings: { ...formData.settings, language: e.target.value }
-                  })}
-                >
-                  <MenuItem value="en">English</MenuItem>
-                  <MenuItem value="es">Spanish</MenuItem>
-                  <MenuItem value="fr">French</MenuItem>
-                  {/* Add more languages */}
-                </Select>
-              </FormControl>
+              <TimezoneSelect
+                value={formData.settings.timezone}
+                onChange={(value) => setFormData({
+                  ...formData,
+                  settings: { ...formData.settings, timezone: value }
+                })}
+              />
             </Grid>
 
             <Grid item xs={12} md={6}>
@@ -228,59 +276,45 @@ const OrganizationSettings: React.FC = () => {
               </FormControl>
             </Grid>
 
-            <Grid item xs={12}>
-              <Typography variant="subtitle1" gutterBottom>
-                Notifications
-              </Typography>
+            <Grid item xs={12} md={6}>
+              <FormControl fullWidth>
+                <InputLabel>Language</InputLabel>
+                <Select
+                  value={formData.settings.language}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    settings: { ...formData.settings, language: e.target.value }
+                  })}
+                >
+                  <MenuItem value="en">English</MenuItem>
+                  <MenuItem value="es">Spanish</MenuItem>
+                  <MenuItem value="fr">French</MenuItem>
+                </Select>
+              </FormControl>
             </Grid>
 
-            <Grid item xs={12}>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={formData.settings.notifications.email}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      settings: {
-                        ...formData.settings,
-                        notifications: {
-                          ...formData.settings.notifications,
-                          email: e.target.checked
-                        }
-                      }
-                    })}
-                  />
-                }
-                label="Email Notifications"
-              />
-            </Grid>
-
-            <Grid item xs={12}>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={formData.settings.notifications.slack}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      settings: {
-                        ...formData.settings,
-                        notifications: {
-                          ...formData.settings.notifications,
-                          slack: e.target.checked
-                        }
-                      }
-                    })}
-                  />
-                }
-                label="Slack Notifications"
-              />
+            <Grid item xs={12} md={6}>
+              <FormControl fullWidth>
+                <InputLabel>Currency</InputLabel>
+                <Select
+                  value={formData.settings.currency}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    settings: { ...formData.settings, currency: e.target.value }
+                  })}
+                >
+                  <MenuItem value="USD">USD ($)</MenuItem>
+                  <MenuItem value="EUR">EUR (€)</MenuItem>
+                  <MenuItem value="GBP">GBP (£)</MenuItem>
+                </Select>
+              </FormControl>
             </Grid>
           </Grid>
 
           <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
             <Button
-              type="submit"
               variant="contained"
+              type="submit"
               disabled={loading}
             >
               {loading ? 'Saving...' : 'Save Changes'}
