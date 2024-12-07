@@ -1,51 +1,55 @@
 // core/frontend/src/components/dashboard/RecentPlugins.tsx
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Box,
   Typography,
-  List,
-  ListItem,
-  ListItemAvatar,
-  ListItemText,
-  ListItemSecondary,
+  Card,
+  CardContent,
+  CardActions,
+  Button,
+  Grid,
   Avatar,
   Chip,
   IconButton,
-  Button,
+  Menu,
+  MenuItem,
   Tooltip,
-  useTheme
+  CircularProgress,
+  useTheme,
+  Divider
 } from '@mui/material';
 import {
-  Extension as ExtensionIcon,
+  MoreVert as MoreVertIcon,
+  CheckCircle as CheckCircleIcon,
+  Error as ErrorIcon,
   Settings as SettingsIcon,
+  Refresh as RefreshIcon,
   Delete as DeleteIcon,
-  CheckCircle as ActiveIcon,
-  Error as ErrorIcon
+  Launch as LaunchIcon
 } from '@mui/icons-material';
-import { formatDistanceToNow } from 'date-fns';
 
 interface Plugin {
   id: string;
   name: string;
   description: string;
-  status: 'active' | 'inactive' | 'error';
   version: string;
-  lastUpdated: Date;
+  status: 'active' | 'inactive' | 'error';
   icon?: string;
+  lastUpdated: Date;
+  author: string;
+  category: string;
+  error?: string;
+  isUpdating?: boolean;
 }
 
-interface RecentPluginsProps {
-  plugins: Plugin[];
-  onPluginAction?: (action: string, pluginId: string) => void;
-  maxItems?: number;
+interface PluginCardProps {
+  plugin: Plugin;
+  onAction: (action: string, plugin: Plugin) => void;
 }
 
-const RecentPlugins: React.FC<RecentPluginsProps> = ({
-  plugins,
-  onPluginAction,
-  maxItems = 5
-}) => {
+const PluginCard: React.FC<PluginCardProps> = ({ plugin, onAction }) => {
+  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const theme = useTheme();
 
   const getStatusColor = (status: string) => {
@@ -64,7 +68,7 @@ const RecentPlugins: React.FC<RecentPluginsProps> = ({
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'active':
-        return <ActiveIcon fontSize="small" />;
+        return <CheckCircleIcon fontSize="small" />;
       case 'error':
         return <ErrorIcon fontSize="small" />;
       default:
@@ -73,87 +77,167 @@ const RecentPlugins: React.FC<RecentPluginsProps> = ({
   };
 
   return (
-    <Box>
-      <Box
-        display="flex"
-        justifyContent="space-between"
-        alignItems="center"
-        mb={2}
+    <Card variant="outlined">
+      <CardContent>
+        <Box display="flex" alignItems="center" gap={2}>
+          <Avatar
+            src={plugin.icon}
+            alt={plugin.name}
+            variant="rounded"
+            sx={{ width: 40, height: 40 }}
+          >
+            {plugin.name[0]}
+          </Avatar>
+          <Box flex={1}>
+            <Box display="flex" alignItems="center" gap={1}>
+              <Typography variant="subtitle1">
+                {plugin.name}
+              </Typography>
+              <Typography variant="caption" color="textSecondary">
+                v{plugin.version}
+              </Typography>
+            </Box>
+            <Typography variant="body2" color="textSecondary" noWrap>
+              {plugin.description}
+            </Typography>
+          </Box>
+          <IconButton
+            size="small"
+            onClick={(e) => setAnchorEl(e.currentTarget)}
+          >
+            <MoreVertIcon />
+          </IconButton>
+        </Box>
+
+        <Box display="flex" alignItems="center" gap={1} mt={2}>
+          <Chip
+            size="small"
+            label={plugin.status}
+            color={plugin.status === 'active' ? 'success' : 'default'}
+            icon={getStatusIcon(plugin.status)}
+          />
+          <Chip
+            size="small"
+            label={plugin.category}
+            variant="outlined"
+          />
+          {plugin.isUpdating && (
+            <CircularProgress size={16} />
+          )}
+        </Box>
+
+        {plugin.error && (
+          <Typography
+            variant="caption"
+            color="error"
+            sx={{ display: 'block', mt: 1 }}
+          >
+            {plugin.error}
+          </Typography>
+        )}
+      </CardContent>
+
+      <Divider />
+
+      <CardActions sx={{ justifyContent: 'space-between' }}>
+        <Typography variant="caption" color="textSecondary">
+          By {plugin.author}
+        </Typography>
+        <Box>
+          <Tooltip title="Configure">
+            <IconButton
+              size="small"
+              onClick={() => onAction('configure', plugin)}
+            >
+              <SettingsIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Open">
+            <IconButton
+              size="small"
+              onClick={() => onAction('open', plugin)}
+            >
+              <LaunchIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Box>
+      </CardActions>
+
+      <Menu
+        anchorEl={anchorEl}
+        open={Boolean(anchorEl)}
+        onClose={() => setAnchorEl(null)}
       >
+        <MenuItem onClick={() => {
+          onAction('update', plugin);
+          setAnchorEl(null);
+        }}>
+          <RefreshIcon fontSize="small" sx={{ mr: 1 }} />
+          Update
+        </MenuItem>
+        <MenuItem onClick={() => {
+          onAction(plugin.status === 'active' ? 'deactivate' : 'activate', plugin);
+          setAnchorEl(null);
+        }}>
+          {plugin.status === 'active' ? 'Deactivate' : 'Activate'}
+        </MenuItem>
+        <Divider />
+        <MenuItem
+          onClick={() => {
+            onAction('uninstall', plugin);
+            setAnchorEl(null);
+          }}
+          sx={{ color: 'error.main' }}
+        >
+          <DeleteIcon fontSize="small" sx={{ mr: 1 }} />
+          Uninstall
+        </MenuItem>
+      </Menu>
+    </Card>
+  );
+};
+
+interface RecentPluginsProps {
+  plugins: Plugin[];
+  onAction?: (action: string, plugin: Plugin) => void;
+  maxItems?: number;
+}
+
+const RecentPlugins: React.FC<RecentPluginsProps> = ({
+  plugins,
+  onAction = () => {},
+  maxItems = 4
+}) => {
+  const [showAll, setShowAll] = useState(false);
+
+  const displayedPlugins = showAll ? plugins : plugins.slice(0, maxItems);
+
+  const handleAction = (action: string, plugin: Plugin) => {
+    onAction(action, plugin);
+  };
+
+  return (
+    <Box>
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
         <Typography variant="h6">Recent Plugins</Typography>
         <Button
           size="small"
-          startIcon={<ExtensionIcon />}
-          onClick={() => onPluginAction?.('viewAll', '')}
+          onClick={() => setShowAll(!showAll)}
         >
-          View All
+          {showAll ? 'Show Less' : 'View All'}
         </Button>
       </Box>
 
-      <List>
-        {plugins.slice(0, maxItems).map((plugin) => (
-          <ListItem
-            key={plugin.id}
-            secondaryAction={
-              <Box>
-                <Tooltip title="Configure">
-                  <IconButton
-                    edge="end"
-                    size="small"
-                    onClick={() => onPluginAction?.('configure', plugin.id)}
-                  >
-                    <SettingsIcon />
-                  </IconButton>
-                </Tooltip>
-                <Tooltip title="Remove">
-                  <IconButton
-                    edge="end"
-                    size="small"
-                    onClick={() => onPluginAction?.('remove', plugin.id)}
-                  >
-                    <DeleteIcon />
-                  </IconButton>
-                </Tooltip>
-              </Box>
-            }
-          >
-            <ListItemAvatar>
-              {plugin.icon ? (
-                <Avatar src={plugin.icon} alt={plugin.name} />
-              ) : (
-                <Avatar>
-                  <ExtensionIcon />
-                </Avatar>
-              )}
-            </ListItemAvatar>
-            <ListItemText
-              primary={
-                <Box display="flex" alignItems="center" gap={1}>
-                  <Typography variant="subtitle2">
-                    {plugin.name}
-                  </Typography>
-                  <Chip
-                    size="small"
-                    label={plugin.status}
-                    color={plugin.status === 'active' ? 'success' : 'default'}
-                    icon={getStatusIcon(plugin.status)}
-                  />
-                </Box>
-              }
-              secondary={
-                <>
-                  <Typography variant="body2" color="textSecondary">
-                    {plugin.description}
-                  </Typography>
-                  <Typography variant="caption" color="textSecondary">
-                    Updated {formatDistanceToNow(new Date(plugin.lastUpdated), { addSuffix: true })}
-                  </Typography>
-                </>
-              }
+      <Grid container spacing={2}>
+        {displayedPlugins.map((plugin) => (
+          <Grid item xs={12} key={plugin.id}>
+            <PluginCard
+              plugin={plugin}
+              onAction={handleAction}
             />
-          </ListItem>
+          </Grid>
         ))}
-      </List>
+      </Grid>
 
       {plugins.length === 0 && (
         <Box
@@ -163,12 +247,21 @@ const RecentPlugins: React.FC<RecentPluginsProps> = ({
           justifyContent="center"
           py={4}
         >
-          <ExtensionIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
           <Typography color="textSecondary">
             No plugins installed yet
           </Typography>
           <Button
-            variant="outlined"
-            size="small"
-            startIcon={<ExtensionIcon />}
-            onClick={() => onPluginAction?.('
+            variant="contained"
+            color="primary"
+            sx={{ mt: 2 }}
+            onClick={() => handleAction('browse', {} as Plugin)}
+          >
+            Browse Plugins
+          </Button>
+        </Box>
+      )}
+    </Box>
+  );
+};
+
+export default RecentPlugins;
