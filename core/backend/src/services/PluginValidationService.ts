@@ -1,214 +1,242 @@
 // core/backend/src/services/PluginValidationService.ts
 
+import { ESLint } from 'eslint';
+import { Parser } from '@babel/parser';
+import traverse from '@babel/traverse';
 import { createHash } from 'crypto';
 import { promises as fs } from 'fs';
-import path from 'path';
-import { ESLint } from 'eslint';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import {
   ValidationResult,
-  SecurityScanResult,
-  CodeQualityResult,
-  PerformanceMetrics
+  SecurityScan,
+  CodeAnalysis,
+  ResourceProfile,
+  ValidationError
 } from '../types/plugin.types';
-
-const execAsync = promisify(exec);
 
 export class PluginValidationService {
   private readonly eslint: ESLint;
+  private readonly securityScanner: SecurityScanner;
+  private readonly resourceAnalyzer: ResourceAnalyzer;
+  private readonly policyEnforcer: PolicyEnforcer;
 
   constructor() {
     this.eslint = new ESLint({
       useEslintrc: false,
       baseConfig: {
-        extends: ['eslint:recommended', 'plugin:security/recommended']
+        extends: [
+          'eslint:recommended',
+          'plugin:security/recommended',
+          'plugin:node/recommended'
+        ]
       }
     });
+    this.securityScanner = new SecurityScanner();
+    this.resourceAnalyzer = new ResourceAnalyzer();
+    this.policyEnforcer = new PolicyEnforcer();
   }
 
   async validatePlugin(pluginPath: string): Promise<ValidationResult> {
     const results: ValidationResult = {
-      valid: true,
+      isValid: false,
       errors: [],
       warnings: [],
       securityScan: null,
-      codeQuality: null,
-      performance: null,
-      license: null
+      codeAnalysis: null,
+      resourceProfile: null
     };
 
     try {
       // Run all validations in parallel
       const [
         securityResults,
-        codeQualityResults,
-        performanceResults,
-        licenseInfo
+        codeResults,
+        resourceResults,
+        policyResults
       ] = await Promise.all([
-        this.runSecurityScan(pluginPath),
-        this.analyzeCodeQuality(pluginPath),
-        this.assessPerformance(pluginPath),
-        this.verifyLicense(pluginPath)
+        this.performSecurityScan(pluginPath),
+        this.analyzeCode(pluginPath),
+        this.analyzeResources(pluginPath),
+        this.enforcePolicies(pluginPath)
       ]);
 
+      // Combine results
       results.securityScan = securityResults;
-      results.codeQuality = codeQualityResults;
-      results.performance = performanceResults;
-      results.license = licenseInfo;
+      results.codeAnalysis = codeResults;
+      results.resourceProfile = resourceResults;
 
       // Determine overall validity
-      results.valid = this.determineValidity(results);
+      results.isValid = this.determineValidity(results);
+
+      // Add policy violations as errors/warnings
+      results.errors.push(...policyResults.errors);
+      results.warnings.push(...policyResults.warnings);
 
     } catch (error) {
-      results.valid = false;
-      results.errors.push(`Validation failed: ${error.message}`);
+      results.errors.push({
+        type: 'validation_error',
+        message: error.message,
+        severity: 'error'
+      });
     }
 
     return results;
   }
 
-  private async runSecurityScan(pluginPath: string): Promise<SecurityScanResult> {
-    const results: SecurityScanResult = {
-      vulnerabilities: [],
-      dependencies: [],
-      securityScore: 0
+  private async performSecurityScan(pluginPath: string): Promise<SecurityScan> {
+    return {
+      vulnerabilities: await this.securityScanner.scanVulnerabilities(pluginPath),
+      dependencies: await this.securityScanner.checkDependencies(pluginPath),
+      permissions: await this.securityScanner.analyzePermissions(pluginPath),
+      securityScore: await this.securityScanner.calculateSecurityScore(pluginPath)
     };
-
-    // Run dependency vulnerability check
-    const { stdout: npmAudit } = await execAsync('npm audit --json', {
-      cwd: pluginPath
-    });
-    const auditResults = JSON.parse(npmAudit);
-
-    // Static code analysis for security issues
-    const files = await this.getJavaScriptFiles(pluginPath);
-    for (const file of files) {
-      const [eslintResults] = await this.eslint.lintFiles(file);
-      const securityIssues = eslintResults.messages.filter(msg => 
-        msg.ruleId?.startsWith('security/')
-      );
-
-      results.vulnerabilities.push(...securityIssues.map(issue => ({
-        type: 'code',
-        severity: issue.severity,
-        message: issue.message,
-        location: `${file}:${issue.line}`
-      })));
-    }
-
-    // Calculate security score
-    results.securityScore = this.calculateSecurityScore(results);
-
-    return results;
   }
 
-  private async analyzeCodeQuality(pluginPath: string): Promise<CodeQualityResult> {
-    const results: CodeQualityResult = {
-      lintingIssues: [],
-      complexity: [],
+  private async analyzeCode(pluginPath: string): Promise<CodeAnalysis> {
+    const files = await this.getSourceFiles(pluginPath);
+    const analysis: CodeAnalysis = {
+      complexity: {},
+      dependencies: {},
       coverage: null,
-      maintainabilityScore: 0
+      quality: {
+        maintainability: 0,
+        reliability: 0,
+        security: 0
+      }
     };
 
-    // Run ESLint
-    const files = await this.getJavaScriptFiles(pluginPath);
     for (const file of files) {
-      const [eslintResults] = await this.eslint.lintFiles(file);
-      results.lintingIssues.push(...eslintResults.messages);
+      // Parse and analyze code
+      const ast = await this.parseFile(file);
+      const metrics = await this.analyzeAST(ast);
+      
+      analysis.complexity[file] = metrics.complexity;
+      analysis.dependencies[file] = metrics.dependencies;
     }
 
-    // Calculate code complexity
-    for (const file of files) {
-      const complexity = await this.calculateComplexity(file);
-      results.complexity.push({
-        file,
-        ...complexity
-      });
-    }
+    // Calculate overall scores
+    analysis.quality = await this.calculateQualityScores(analysis);
 
-    // Run tests and calculate coverage
-    try {
-      const { stdout: coverage } = await execAsync('npm test -- --coverage --json', {
-        cwd: pluginPath
-      });
-      results.coverage = JSON.parse(coverage);
-    } catch (error) {
-      results.coverage = null;
-    }
-
-    // Calculate maintainability score
-    results.maintainabilityScore = this.calculateMaintainabilityScore(results);
-
-    return results;
+    return analysis;
   }
 
-  private async assessPerformance(pluginPath: string): Promise<PerformanceMetrics> {
-    const metrics: PerformanceMetrics = {
-      memoryUsage: 0,
-      cpuUsage: 0,
-      startupTime: 0,
-      resourceIntensity: 'low'
+  private async analyzeResources(pluginPath: string): Promise<ResourceProfile> {
+    return await this.resourceAnalyzer.analyze(pluginPath);
+  }
+
+  private async enforcePolicies(pluginPath: string): Promise<{
+    errors: ValidationError[];
+    warnings: ValidationError[];
+  }> {
+    return await this.policyEnforcer.enforce(pluginPath);
+  }
+
+  private async parseFile(filePath: string): Promise<any> {
+    const content = await fs.readFile(filePath, 'utf-8');
+    return Parser.parse(content, {
+      sourceType: 'module',
+      plugins: ['typescript']
+    });
+  }
+
+  private async analyzeAST(ast: any): Promise<{
+    complexity: any;
+    dependencies: any;
+  }> {
+    const analysis = {
+      complexity: {
+        cyclomaticComplexity: 0,
+        maintainabilityIndex: 0,
+        halsteadMetrics: null
+      },
+      dependencies: {
+        internal: new Set<string>(),
+        external: new Set<string>()
+      }
     };
 
-    // Run performance tests
-    try {
-      // Memory usage analysis
-      metrics.memoryUsage = await this.measureMemoryUsage(pluginPath);
+    traverse(ast, {
+      // Analyze code complexity
+      FunctionDeclaration(path) {
+        analysis.complexity.cyclomaticComplexity += this.calculateComplexity(path);
+      },
+      // Track dependencies
+      ImportDeclaration(path) {
+        const importPath = path.node.source.value;
+        if (importPath.startsWith('.')) {
+          analysis.dependencies.internal.add(importPath);
+        } else {
+          analysis.dependencies.external.add(importPath);
+        }
+      }
+    });
 
-      // CPU usage analysis
-      metrics.cpuUsage = await this.measureCPUUsage(pluginPath);
-
-      // Startup time measurement
-      metrics.startupTime = await this.measureStartupTime(pluginPath);
-
-      // Determine resource intensity
-      metrics.resourceIntensity = this.determineResourceIntensity(metrics);
-
-    } catch (error) {
-      console.error('Performance assessment failed:', error);
-    }
-
-    return metrics;
+    return analysis;
   }
 
-  private async verifyLicense(pluginPath: string): Promise<any> {
-    // Implementation for license verification
-  }
-
-  private async getJavaScriptFiles(dir: string): Promise<string[]> {
-    // Implementation for getting all JS files
-  }
-
-  private calculateSecurityScore(results: SecurityScanResult): number {
-    // Implementation for calculating security score
-  }
-
-  private calculateMaintainabilityScore(results: CodeQualityResult): number {
-    // Implementation for calculating maintainability score
-  }
-
-  private async calculateComplexity(filePath: string): Promise<any> {
+  private calculateComplexity(path: any): number {
     // Implementation for calculating code complexity
+    return 0;
   }
 
-  private async measureMemoryUsage(pluginPath: string): Promise<number> {
-    // Implementation for measuring memory usage
-  }
-
-  private async measureCPUUsage(pluginPath: string): Promise<number> {
-    // Implementation for measuring CPU usage
-  }
-
-  private async measureStartupTime(pluginPath: string): Promise<number> {
-    // Implementation for measuring startup time
-  }
-
-  private determineResourceIntensity(metrics: PerformanceMetrics): string {
-    // Implementation for determining resource intensity
+  private async calculateQualityScores(analysis: CodeAnalysis): Promise<{
+    maintainability: number;
+    reliability: number;
+    security: number;
+  }> {
+    // Implementation for calculating quality scores
+    return {
+      maintainability: 0,
+      reliability: 0,
+      security: 0
+    };
   }
 
   private determineValidity(results: ValidationResult): boolean {
-    // Implementation for determining overall validity
+    // Check for critical errors
+    if (results.errors.some(error => error.severity === 'critical')) {
+      return false;
+    }
+
+    // Check security score
+    if (results.securityScan?.securityScore < 70) {
+      return false;
+    }
+
+    // Check resource usage
+    if (results.resourceProfile?.exceedsLimits) {
+      return false;
+    }
+
+    return true;
+  }
+
+  // Runtime validation methods
+  async validateRuntime(pluginId: string): Promise<ValidationResult> {
+    // Implementation for runtime validation
+    return {
+      isValid: true,
+      errors: [],
+      warnings: []
+    };
+  }
+
+  // Resource validation methods
+  async validateResources(pluginId: string): Promise<ValidationResult> {
+    // Implementation for resource validation
+    return {
+      isValid: true,
+      errors: [],
+      warnings: []
+    };
+  }
+
+  // Policy enforcement methods
+  async validatePolicies(pluginId: string): Promise<ValidationResult> {
+    // Implementation for policy validation
+    return {
+      isValid: true,
+      errors: [],
+      warnings: []
+    };
   }
 }
