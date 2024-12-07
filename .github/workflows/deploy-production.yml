@@ -1,0 +1,235 @@
+name: Deploy Production
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: workflow-management
+  EKS_CLUSTER: workflow-management-cluster
+  NAMESPACE: production
+  DEPLOYMENT_NAME: workflow-management
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    
+    services:
+      mongodb:
+        image: mongo:4.4
+        ports:
+          - 27017:27017
+      redis:
+        image: redis:6
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          cd core/backend
+          npm ci
+          cd ../frontend
+          npm ci
+
+      - name: Run backend tests
+        run: |
+          cd core/backend
+          npm run test:ci
+        env:
+          NODE_ENV: test
+          MONGODB_URI: mongodb://localhost:27017/test
+          REDIS_HOST: localhost
+          JWT_SECRET: test-secret
+
+      - name: Run frontend tests
+        run: |
+          cd core/frontend
+          npm run test:ci
+        env:
+          CI: true
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Run SAST scan
+        uses: github/codeql-action/init@v2
+        with:
+          languages: javascript
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2
+
+      - name: Run dependency scan
+        run: |
+          cd core/backend
+          npm audit
+          cd ../frontend
+          npm audit
+
+  build:
+    name: Build and Push Images
+    runs-on: ubuntu-latest
+    needs: security-scan
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build, tag, and push backend image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd core/backend
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY-backend:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY-backend:$IMAGE_TAG
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY-backend:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY-backend:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY-backend:latest
+
+      - name: Build, tag, and push frontend image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd core/frontend
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY-frontend:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY-frontend:$IMAGE_TAG
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY-frontend:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY-frontend:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY-frontend:latest
+
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: build
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Update kube config
+        run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }} --region ${{ env.AWS_REGION }}
+
+      - name: Deploy to EKS
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Update deployment manifests with new image tags
+          sed -i "s|IMAGE_TAG|$IMAGE_TAG|g" deployment/kubernetes/backend-deployment.yml
+          sed -i "s|IMAGE_TAG|$IMAGE_TAG|g" deployment/kubernetes/frontend-deployment.yml
+          
+          # Apply Kubernetes manifests
+          kubectl apply -f deployment/kubernetes/namespace.yml
+          kubectl apply -f deployment/kubernetes/configmap.yml
+          kubectl apply -f deployment/kubernetes/secret.yml
+          kubectl apply -f deployment/kubernetes/backend-deployment.yml
+          kubectl apply -f deployment/kubernetes/frontend-deployment.yml
+          kubectl apply -f deployment/kubernetes/service.yml
+          kubectl apply -f deployment/kubernetes/ingress.yml
+          
+          # Verify deployment
+          kubectl rollout status deployment/$DEPLOYMENT_NAME-backend -n $NAMESPACE
+          kubectl rollout status deployment/$DEPLOYMENT_NAME-frontend -n $NAMESPACE
+
+  post-deploy:
+    name: Post Deployment Tasks
+    runs-on: ubuntu-latest
+    needs: deploy
+
+    steps:
+      - name: Run database migrations
+        run: |
+          # Add database migration commands here
+          echo "Running migrations..."
+
+      - name: Warm up cache
+        run: |
+          # Add cache warming commands here
+          echo "Warming up cache..."
+
+      - name: Run smoke tests
+        run: |
+          # Add smoke test commands here
+          echo "Running smoke tests..."
+
+      - name: Send deployment notification
+        if: always()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow,job,took
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  rollback:
+    name: Rollback on Failure
+    runs-on: ubuntu-latest
+    needs: [deploy, post-deploy]
+    if: failure()
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kube config
+        run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }} --region ${{ env.AWS_REGION }}
+
+      - name: Rollback deployment
+        run: |
+          kubectl rollout undo deployment/$DEPLOYMENT_NAME-backend -n $NAMESPACE
+          kubectl rollout undo deployment/$DEPLOYMENT_NAME-frontend -n $NAMESPACE
+
+      - name: Send rollback notification
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow,job,took
+          text: 'Deployment failed, rolling back to previous version'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
