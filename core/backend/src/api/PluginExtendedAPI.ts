@@ -4,6 +4,8 @@ import { Router } from 'express';
 import { PluginController } from '../controllers/PluginController';
 import { validateRequest } from '../middleware/validation';
 import { authenticate, authorize } from '../middleware/auth';
+import { rateLimit } from '../middleware/rateLimit';
+import { pluginSchemas } from '../schemas/plugin.schemas';
 
 export class PluginExtendedAPI {
   private router: Router;
@@ -12,11 +14,103 @@ export class PluginExtendedAPI {
   constructor() {
     this.router = Router();
     this.controller = new PluginController();
-    this.setupExtendedRoutes();
+    this.setupRoutes();
   }
 
-  private setupExtendedRoutes(): void {
-    // Advanced Plugin Management
+  private setupRoutes(): void {
+    // Plugin Lifecycle Management
+    this.router.post(
+      '/plugins/:pluginId/start',
+      authenticate,
+      authorize(['admin']),
+      this.controller.startPlugin
+    );
+
+    this.router.post(
+      '/plugins/:pluginId/stop',
+      authenticate,
+      authorize(['admin']),
+      this.controller.stopPlugin
+    );
+
+    this.router.post(
+      '/plugins/:pluginId/restart',
+      authenticate,
+      authorize(['admin']),
+      this.controller.restartPlugin
+    );
+
+    // Plugin Configuration
+    this.router.get(
+      '/plugins/:pluginId/config/schema',
+      authenticate,
+      this.controller.getConfigSchema
+    );
+
+    this.router.post(
+      '/plugins/:pluginId/config/validate',
+      authenticate,
+      validateRequest(pluginSchemas.configValidation),
+      this.controller.validateConfig
+    );
+
+    // Plugin Development
+    this.router.post(
+      '/plugins/:pluginId/debug',
+      authenticate,
+      authorize(['developer']),
+      this.controller.enableDebugMode
+    );
+
+    this.router.get(
+      '/plugins/:pluginId/logs',
+      authenticate,
+      this.controller.getPluginLogs
+    );
+
+    // Plugin Monitoring
+    this.router.get(
+      '/plugins/:pluginId/metrics',
+      authenticate,
+      this.controller.getPluginMetrics
+    );
+
+    this.router.get(
+      '/plugins/:pluginId/health',
+      authenticate,
+      this.controller.getPluginHealth
+    );
+
+    // Plugin Security
+    this.router.post(
+      '/plugins/:pluginId/scan',
+      authenticate,
+      authorize(['admin']),
+      this.controller.scanPlugin
+    );
+
+    this.router.get(
+      '/plugins/:pluginId/permissions',
+      authenticate,
+      this.controller.getPluginPermissions
+    );
+
+    // Plugin Updates
+    this.router.get(
+      '/plugins/:pluginId/updates',
+      authenticate,
+      this.controller.checkUpdates
+    );
+
+    this.router.post(
+      '/plugins/:pluginId/update',
+      authenticate,
+      authorize(['admin']),
+      validateRequest(pluginSchemas.update),
+      this.controller.updatePlugin
+    );
+
+    // Plugin Backup & Restore
     this.router.post(
       '/plugins/:pluginId/backup',
       authenticate,
@@ -28,116 +122,35 @@ export class PluginExtendedAPI {
       '/plugins/:pluginId/restore',
       authenticate,
       authorize(['admin']),
+      validateRequest(pluginSchemas.restore),
       this.controller.restorePlugin
     );
 
-    this.router.post(
-      '/plugins/:pluginId/migrate',
+    // Plugin Dependencies
+    this.router.get(
+      '/plugins/:pluginId/dependencies',
       authenticate,
-      authorize(['admin']),
-      this.controller.migratePlugin
+      this.controller.getPluginDependencies
     );
 
-    // Plugin Development & Testing
     this.router.post(
-      '/plugins/test',
+      '/plugins/:pluginId/dependencies/check',
       authenticate,
-      authorize(['developer']),
-      this.controller.testPlugin
+      this.controller.checkDependencies
+    );
+
+    // Plugin Events & Webhooks
+    this.router.post(
+      '/plugins/:pluginId/webhooks',
+      authenticate,
+      validateRequest(pluginSchemas.webhook),
+      this.controller.registerWebhook
     );
 
     this.router.get(
-      '/plugins/:pluginId/test-results',
+      '/plugins/:pluginId/events',
       authenticate,
-      this.controller.getTestResults
-    );
-
-    this.router.post(
-      '/plugins/:pluginId/debug',
-      authenticate,
-      authorize(['developer']),
-      this.controller.enableDebugMode
-    );
-
-    // Plugin Performance & Monitoring
-    this.router.get(
-      '/plugins/:pluginId/metrics',
-      authenticate,
-      this.controller.getPluginMetrics
-    );
-
-    this.router.get(
-      '/plugins/:pluginId/traces',
-      authenticate,
-      this.controller.getPluginTraces
-    );
-
-    this.router.get(
-      '/plugins/:pluginId/profiling',
-      authenticate,
-      authorize(['admin']),
-      this.controller.getPluginProfiling
-    );
-
-    // Plugin Security
-    this.router.post(
-      '/plugins/:pluginId/security-scan',
-      authenticate,
-      authorize(['admin']),
-      this.controller.scanPluginSecurity
-    );
-
-    this.router.get(
-      '/plugins/:pluginId/audit-log',
-      authenticate,
-      this.controller.getPluginAuditLog
-    );
-
-    this.router.post(
-      '/plugins/:pluginId/permissions',
-      authenticate,
-      authorize(['admin']),
-      this.controller.updatePluginPermissions
-    );
-
-    // Plugin Integration
-    this.router.post(
-      '/plugins/:pluginId/integrations',
-      authenticate,
-      this.controller.createPluginIntegration
-    );
-
-    this.router.get(
-      '/plugins/:pluginId/integrations',
-      authenticate,
-      this.controller.listPluginIntegrations
-    );
-
-    // Plugin Data Management
-    this.router.post(
-      '/plugins/:pluginId/data/export',
-      authenticate,
-      this.controller.exportPluginData
-    );
-
-    this.router.post(
-      '/plugins/:pluginId/data/import',
-      authenticate,
-      authorize(['admin']),
-      this.controller.importPluginData
-    );
-
-    // Plugin Collaboration
-    this.router.post(
-      '/plugins/:pluginId/share',
-      authenticate,
-      this.controller.sharePlugin
-    );
-
-    this.router.get(
-      '/plugins/:pluginId/collaborators',
-      authenticate,
-      this.controller.getPluginCollaborators
+      this.controller.getPluginEvents
     );
 
     // Plugin Marketplace Integration
@@ -145,27 +158,28 @@ export class PluginExtendedAPI {
       '/plugins/:pluginId/publish',
       authenticate,
       authorize(['developer']),
+      validateRequest(pluginSchemas.publish),
       this.controller.publishPlugin
     );
 
     this.router.post(
-      '/plugins/:pluginId/reviews',
-      authenticate,
-      this.controller.addPluginReview
-    );
-
-    // Plugin Documentation
-    this.router.get(
-      '/plugins/:pluginId/docs',
-      authenticate,
-      this.controller.getPluginDocs
-    );
-
-    this.router.post(
-      '/plugins/:pluginId/docs',
+      '/plugins/:pluginId/unpublish',
       authenticate,
       authorize(['developer']),
-      this.controller.updatePluginDocs
+      this.controller.unpublishPlugin
+    );
+
+    // Plugin Analytics
+    this.router.get(
+      '/plugins/:pluginId/analytics',
+      authenticate,
+      this.controller.getPluginAnalytics
+    );
+
+    this.router.get(
+      '/plugins/:pluginId/usage',
+      authenticate,
+      this.controller.getPluginUsage
     );
   }
 
