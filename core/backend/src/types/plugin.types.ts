@@ -1,32 +1,32 @@
-// Plugin Interface Definitions
-
 /**
  * Base Plugin Configuration
+ * Defines the basic structure of a plugin
  */
 export interface PluginConfig {
-  id: string;
-  name: string;
-  version: string;
-  enabled: boolean;
-  configurable: boolean;
-  settings?: Record<string, any>;
+  id: string;                  // Unique identifier for the plugin
+  name: string;               // Display name of the plugin
+  version: string;            // Semantic version number
+  enabled: boolean;           // Whether the plugin is currently enabled
+  configurable: boolean;      // Whether the plugin has configurable settings
+  settings?: Record<string, any>; // Plugin-specific settings
 }
 
 /**
  * Plugin Metadata Interface
+ * Contains information about the plugin package
  */
 export interface PluginMetadata {
-  id: string;
-  name: string;
-  version: string;
-  description: string;
-  author: string;
-  license: string;
-  repository?: string;
-  dependencies?: {
-    [key: string]: string;
+  id: string;                 // Unique identifier
+  name: string;               // Display name
+  version: string;            // Version number
+  description: string;        // Plugin description
+  author: string;            // Plugin author
+  license: string;           // License type
+  repository?: string;       // Source code repository
+  dependencies?: {           // Required dependencies
+    [key: string]: string;   // Package name -> version requirement
   };
-  configSchema?: {
+  configSchema?: {           // Configuration schema
     [key: string]: {
       type: 'string' | 'number' | 'boolean' | 'object' | 'array';
       required?: boolean;
@@ -37,52 +37,57 @@ export interface PluginMetadata {
 }
 
 /**
- * Plugin Hooks Interface
+ * Plugin Lifecycle Hooks
+ * Methods called during plugin lifecycle events
  */
 export interface PluginHooks {
-  onInstall?: () => Promise<void>;
-  onUninstall?: () => Promise<void>;
-  onEnable?: () => Promise<void>;
-  onDisable?: () => Promise<void>;
-  onUpdate?: (previousVersion: string) => Promise<void>;
-  onConfigUpdate?: (newConfig: Record<string, any>) => Promise<void>;
+  onInstall?: () => Promise<void>;     // Called when plugin is installed
+  onUninstall?: () => Promise<void>;   // Called when plugin is removed
+  onEnable?: () => Promise<void>;      // Called when plugin is enabled
+  onDisable?: () => Promise<void>;     // Called when plugin is disabled
+  onUpdate?: (previousVersion: string) => Promise<void>;  // Called during updates
+  onConfigUpdate?: (newConfig: Record<string, any>) => Promise<void>;  // Called when config changes
 }
 
 /**
- * Plugin Routes Interface
+ * Plugin Route Interface
+ * Defines API routes provided by the plugin
  */
 export interface PluginRoute {
-  path: string;
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
-  handler: Function;
-  middleware?: Function[];
-  auth?: boolean;
-  roles?: string[];
+  path: string;              // Route path
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';  // HTTP method
+  handler: Function;         // Route handler function
+  middleware?: Function[];   // Optional middleware
+  auth?: boolean;           // Whether route requires authentication
+  roles?: string[];         // Required roles for access
 }
 
 /**
  * Plugin UI Component Interface
+ * Defines frontend components provided by the plugin
  */
 export interface PluginUIComponent {
-  type: 'dashboard' | 'settings' | 'modal' | 'sidebar';
-  component: any; // React component
-  props?: Record<string, any>;
-  position?: string;
-  priority?: number;
+  type: 'dashboard' | 'settings' | 'modal' | 'sidebar';  // Component type
+  component: any;           // React component
+  props?: Record<string, any>;  // Component props
+  position?: string;       // Rendering position
+  priority?: number;       // Rendering priority
 }
 
 /**
- * Plugin Permissions Interface
+ * Plugin Permission Interface
+ * Defines access control for plugin features
  */
 export interface PluginPermission {
-  id: string;
-  name: string;
-  description: string;
-  roles?: string[];
+  id: string;              // Permission identifier
+  name: string;            // Display name
+  description: string;     // Permission description
+  roles?: string[];        // Roles that have this permission
 }
 
 /**
  * Main Plugin Interface
+ * Complete plugin definition
  */
 export interface Plugin {
   id: string;
@@ -119,6 +124,7 @@ export interface Plugin {
 
 /**
  * Plugin Manager Interface
+ * Defines methods for managing plugins
  */
 export interface IPluginManager {
   installPlugin(pluginId: string): Promise<boolean>;
@@ -134,6 +140,7 @@ export interface IPluginManager {
 
 /**
  * Plugin Installation Status
+ * Result of plugin installation attempt
  */
 export interface PluginInstallationStatus {
   status: 'success' | 'error' | 'pending';
@@ -144,6 +151,7 @@ export interface PluginInstallationStatus {
 
 /**
  * Plugin Event Types
+ * Different types of plugin-related events
  */
 export enum PluginEventType {
   INSTALLED = 'plugin:installed',
@@ -157,6 +165,7 @@ export enum PluginEventType {
 
 /**
  * Plugin Event Interface
+ * Structure of plugin-related events
  */
 export interface PluginEvent {
   type: PluginEventType;
