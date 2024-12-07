@@ -1,7 +1,3 @@
-
-4. In the code editor, paste this code:
-
-```typescript
 import { Request, Response, NextFunction } from 'express';
 import { Gauge, Counter, Histogram, Registry } from 'prom-client';
 import os from 'os';
@@ -300,4 +296,3 @@ export default {
   metricsHandler,
   recordMetric
 };
-```
