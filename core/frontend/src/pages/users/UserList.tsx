@@ -1,6 +1,6 @@
 // core/frontend/src/pages/users/UserList.tsx
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Paper,
@@ -14,146 +14,199 @@ import {
   TablePagination,
   IconButton,
   Button,
-  Avatar,
-  Chip,
-  TextField,
-  InputAdornment,
   Menu,
   MenuItem,
-  Tooltip
+  Chip,
+  TextField,
+  Dialog,
+  Tooltip,
+  Checkbox,
+  FormControlLabel,
+  Grid,
+  Drawer
 } from '@mui/material';
 import {
-  Search as SearchIcon,
+  FilterList as FilterIcon,
+  GetApp as ExportIcon,
+  Settings as SettingsIcon,
   Add as AddIcon,
   MoreVert as MoreVertIcon,
-  Edit as EditIcon,
-  Delete as DeleteIcon,
-  Lock as LockIcon,
-  LockOpen as UnlockIcon
+  Save as SaveIcon
 } from '@mui/icons-material';
 import { useUsers } from '../../hooks/useUsers';
-import { User } from '../../types/user.types';
+import { AdvancedFilters } from './components/AdvancedFilters';
+import { ColumnCustomization } from './components/ColumnCustomization';
+import { BatchOperations } from './components/BatchOperations';
+import { ExportOptions } from './components/ExportOptions';
+
+interface Column {
+  id: string;
+  label: string;
+  visible: boolean;
+  sortable: boolean;
+  width?: number;
+}
 
 const UserList: React.FC = () => {
-  const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedUser, setSelectedUser] = useState<string | null>(null);
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  // State management
+  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+  const [columns, setColumns] = useState<Column[]>([
+    { id: 'name', label: 'Name', visible: true, sortable: true },
+    { id: 'email', label: 'Email', visible: true, sortable: true },
+    { id: 'role', label: 'Role', visible: true, sortable: true },
+    { id: 'department', label: 'Department', visible: true, sortable: true },
+    { id: 'status', label: 'Status', visible: true, sortable: true },
+    { id: 'lastLogin', label: 'Last Login', visible: true, sortable: true },
+    { id: 'createdAt', label: 'Created At', visible: false, sortable: true },
+    { id: 'updatedAt', label: 'Updated At', visible: false, sortable: true }
+  ]);
 
-  const { users, loading, error, totalUsers, deleteUser, updateUserStatus } = useUsers({
-    page,
-    limit: rowsPerPage,
-    search: searchQuery
+  const [filters, setFilters] = useState({
+    search: '',
+    role: '',
+    department: '',
+    status: '',
+    dateRange: null,
+    customFields: {}
   });
 
-  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>, userId: string) => {
-    setSelectedUser(userId);
-    setAnchorEl(event.currentTarget);
+  const [sorting, setSorting] = useState({
+    field: 'createdAt',
+    direction: 'desc'
+  });
+
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [filtersDrawerOpen, setFiltersDrawerOpen] = useState(false);
+  const [columnsDialogOpen, setColumnsDialogOpen] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+
+  // Fetch users with filters, sorting, and pagination
+  const { users, loading, error, totalUsers, exportUsers } = useUsers({
+    page,
+    limit: rowsPerPage,
+    filters,
+    sorting
+  });
+
+  // Handle column customization
+  const handleColumnChange = (columnId: string, visible: boolean) => {
+    setColumns(prev =>
+      prev.map(col =>
+        col.id === columnId ? { ...col, visible } : col
+      )
+    );
   };
 
-  const handleMenuClose = () => {
-    setSelectedUser(null);
-    setAnchorEl(null);
+  // Handle batch operations
+  const handleBatchOperation = async (operation: string) => {
+    switch (operation) {
+      case 'delete':
+        // Implement batch delete
+        break;
+      case 'changeRole':
+        // Implement batch role change
+        break;
+      case 'changeStatus':
+        // Implement batch status change
+        break;
+      default:
+        break;
+    }
   };
 
-  const handleDeleteUser = async (userId: string) => {
-    if (window.confirm('Are you sure you want to delete this user?')) {
-      await deleteUser(userId);
-      handleMenuClose();
+  // Handle export
+  const handleExport = async (format: string, options: any) => {
+    try {
+      await exportUsers(selectedUsers, format, options);
+    } catch (error) {
+      console.error('Export failed:', error);
     }
   };
 
   return (
     <Box>
-      {/* Header */}
+      {/* Header Section */}
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Typography variant="h5">Users</Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => {/* Navigate to user creation */}}
-        >
-          Add User
-        </Button>
+        <Box display="flex" gap={1}>
+          <Button
+            startIcon={<FilterIcon />}
+            onClick={() => setFiltersDrawerOpen(true)}
+          >
+            Filters
+          </Button>
+          <Button
+            startIcon={<ExportIcon />}
+            onClick={() => setExportDialogOpen(true)}
+            disabled={selectedUsers.length === 0}
+          >
+            Export
+          </Button>
+          <Button
+            startIcon={<SettingsIcon />}
+            onClick={() => setColumnsDialogOpen(true)}
+          >
+            Columns
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => {/* Navigate to user creation */}}
+          >
+            Add User
+          </Button>
+        </Box>
       </Box>
 
-      {/* Search and Filters */}
-      <Paper sx={{ p: 2, mb: 3 }}>
-        <Box display="flex" gap={2}>
-          <TextField
-            fullWidth
-            placeholder="Search users..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon />
-                </InputAdornment>
-              )
-            }}
-          />
-          {/* Add more filters here */}
-        </Box>
-      </Paper>
+      {/* Batch Operations */}
+      {selectedUsers.length > 0 && (
+        <BatchOperations
+          selectedCount={selectedUsers.length}
+          onOperation={handleBatchOperation}
+        />
+      )}
 
       {/* Users Table */}
       <TableContainer component={Paper}>
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell>User</TableCell>
-              <TableCell>Email</TableCell>
-              <TableCell>Role</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Last Active</TableCell>
-              <TableCell align="right">Actions</TableCell>
+              <TableCell padding="checkbox">
+                <Checkbox
+                  indeterminate={selectedUsers.length > 0 && selectedUsers.length < users.length}
+                  checked={selectedUsers.length === users.length}
+                  onChange={(e) =>
+                    setSelectedUsers(
+                      e.target.checked ? users.map(u => u.id) : []
+                    )
+                  }
+                />
+              </TableCell>
+              {columns
+                .filter(col => col.visible)
+                .map(column => (
+                  <TableCell
+                    key={column.id}
+                    sortDirection={sorting.field === column.id ? sorting.direction : false}
+                    onClick={() => {
+                      if (column.sortable) {
+                        setSorting({
+                          field: column.id,
+                          direction: sorting.direction === 'asc' ? 'desc' : 'asc'
+                        });
+                      }
+                    }}
+                    style={{ cursor: column.sortable ? 'pointer' : 'default' }}
+                  >
+                    {column.label}
+                  </TableCell>
+                ))}
+              <TableCell>Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
-            {users.map((user) => (
-              <TableRow key={user.id}>
-                <TableCell>
-                  <Box display="flex" alignItems="center" gap={2}>
-                    <Avatar src={user.avatar} alt={user.name}>
-                      {user.name.charAt(0)}
-                    </Avatar>
-                    <Box>
-                      <Typography variant="subtitle2">{user.name}</Typography>
-                      <Typography variant="caption" color="textSecondary">
-                        {user.title}
-                      </Typography>
-                    </Box>
-                  </Box>
-                </TableCell>
-                <TableCell>{user.email}</TableCell>
-                <TableCell>
-                  <Chip
-                    label={user.role}
-                    color={user.role === 'admin' ? 'primary' : 'default'}
-                    size="small"
-                  />
-                </TableCell>
-                <TableCell>
-                  <Chip
-                    label={user.status}
-                    color={user.status === 'active' ? 'success' : 'error'}
-                    size="small"
-                  />
-                </TableCell>
-                <TableCell>
-                  {new Date(user.lastActive).toLocaleDateString()}
-                </TableCell>
-                <TableCell align="right">
-                  <IconButton
-                    onClick={(e) => handleMenuOpen(e, user.id)}
-                  >
-                    <MoreVertIcon />
-                  </IconButton>
-                </TableCell>
-              </TableRow>
-            ))}
+            {/* Table rows implementation */}
           </TableBody>
         </Table>
 
@@ -167,31 +220,46 @@ const UserList: React.FC = () => {
             setRowsPerPage(parseInt(e.target.value, 10));
             setPage(0);
           }}
+          rowsPerPageOptions={[5, 10, 25, 50]}
         />
       </TableContainer>
 
-      {/* Action Menu */}
-      <Menu
-        anchorEl={anchorEl}
-        open={Boolean(anchorEl)}
-        onClose={handleMenuClose}
+      {/* Filters Drawer */}
+      <Drawer
+        anchor="right"
+        open={filtersDrawerOpen}
+        onClose={() => setFiltersDrawerOpen(false)}
       >
-        <MenuItem onClick={() => {/* Navigate to edit user */}}>
-          <EditIcon fontSize="small" sx={{ mr: 1 }} />
-          Edit
-        </MenuItem>
-        <MenuItem onClick={() => {/* Handle user status */}}>
-          <LockIcon fontSize="small" sx={{ mr: 1 }} />
-          Disable Account
-        </MenuItem>
-        <MenuItem
-          onClick={() => selectedUser && handleDeleteUser(selectedUser)}
-          sx={{ color: 'error.main' }}
-        >
-          <DeleteIcon fontSize="small" sx={{ mr: 1 }} />
-          Delete
-        </MenuItem>
-      </Menu>
+        <AdvancedFilters
+          filters={filters}
+          onChange={setFilters}
+          onClose={() => setFiltersDrawerOpen(false)}
+        />
+      </Drawer>
+
+      {/* Column Customization Dialog */}
+      <Dialog
+        open={columnsDialogOpen}
+        onClose={() => setColumnsDialogOpen(false)}
+      >
+        <ColumnCustomization
+          columns={columns}
+          onChange={handleColumnChange}
+          onClose={() => setColumnsDialogOpen(false)}
+        />
+      </Dialog>
+
+      {/* Export Dialog */}
+      <Dialog
+        open={exportDialogOpen}
+        onClose={() => setExportDialogOpen(false)}
+      >
+        <ExportOptions
+          selectedCount={selectedUsers.length}
+          onExport={handleExport}
+          onClose={() => setExportDialogOpen(false)}
+        />
+      </Dialog>
     </Box>
   );
 };
