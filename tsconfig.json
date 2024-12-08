@@ -1,5 +1,4 @@
 // tsconfig.json
-
 {
   "compilerOptions": {
     "target": "ES2020",
@@ -17,10 +16,6 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "allowJs": false,
-    "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
-    "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
@@ -29,8 +24,7 @@
       "@utils/*": ["src/utils/*"],
       "@types/*": ["src/types/*"],
       "@services/*": ["src/services/*"],
-      "@contexts/*": ["src/contexts/*"],
-      "@theme/*": ["src/theme/*"]
+      "@contexts/*": ["src/contexts/*"]
     }
   },
   "include": ["src"],
