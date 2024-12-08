@@ -6,6 +6,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { QueryClient, QueryClientProvider } from 'react-query';
+import { ReactQueryDevtools } from 'react-query/devtools';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -14,6 +15,7 @@ import { theme } from './theme';
 import { AuthProvider } from './contexts/AuthContext';
 import { PluginProvider } from './contexts/PluginContext';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
+import { globalStyles } from './theme/globalStyles';
 
 // Initialize React Query client
 const queryClient = new QueryClient({
@@ -26,9 +28,15 @@ const queryClient = new QueryClient({
   },
 });
 
+// Performance monitoring
+const reportWebVitals = (metric: any) => {
+  // Implement analytics
+  console.log(metric);
+};
+
 // Initialize monitoring
-if (import.meta.env.VITE_ENABLE_ERROR_REPORTING === 'true') {
-  // Initialize error reporting (e.g., Sentry)
+if (import.meta.env.VITE_ENABLE_MONITORING === 'true') {
+  // Initialize monitoring services
 }
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
@@ -36,6 +44,7 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <ThemeProvider theme={theme}>
+          {globalStyles}
           <CssBaseline />
           <AuthProvider>
             <PluginProvider>
@@ -56,10 +65,14 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
             </PluginProvider>
           </AuthProvider>
         </ThemeProvider>
+        {process.env.NODE_ENV === 'development' && <ReactQueryDevtools />}
       </QueryClientProvider>
     </ErrorBoundary>
   </React.StrictMode>
 );
+
+// Report web vitals
+reportWebVitals();
 
 // Remove Preload scripts loading
 postMessage({ payload: 'removeLoading' }, '*');
@@ -70,5 +83,19 @@ if (import.meta.env.DEV) {
     if (event.data.payload === 'reload') {
       window.location.reload();
     }
+  });
+}
+
+// Service Worker Registration
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('/service-worker.js')
+      .then((registration) => {
+        console.log('SW registered:', registration);
+      })
+      .catch((error) => {
+        console.log('SW registration failed:', error);
+      });
   });
 }
