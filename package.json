@@ -47,3 +47,12 @@
     "node": ">=18.0.0"
   }
 }
+{
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "test": "jest",
+    "lint": "eslint src --ext ts,tsx",
+    "preview": "vite preview"
+  }
+}
